@@ -51,6 +51,7 @@ export interface ChatAction {
   position?: 'top' | 'center' | 'bottom';
   filter_id?: string;
   name?: string;
+  params?: Record<string, unknown>;
 }
 
 /** Full auto-direct result, returned when the chat calls direct_video. */

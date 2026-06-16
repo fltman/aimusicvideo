@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import tempfile
 import uuid
 from typing import Any
@@ -102,26 +103,110 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "direct_video",
+            "name": "develop_story",
             "description": (
-                "Direct a COMPLETE story-driven draft of the WHOLE song: read the "
-                "lyrics as a story, board it into beat-timed shots with recurring "
-                "characters/settings, reuse fitting library images, generate the "
-                "rest (kept visually consistent), add a title card and lay "
-                "beat-synced effects. Call this when the user asks to auto-direct, "
-                "storyboard the song, or make/direct a draft or the whole video. "
-                "YOU decide how many shots the song needs — only set 'shots' if the "
-                "user explicitly asked for a specific number."
+                "STAGE 1 of directing — write or revise the STORY of the music video "
+                "(logline, theme, recurring characters & settings with frozen looks, "
+                "motif, arc). Generates NO images. Call this first when the user wants "
+                "to direct/storyboard the song, or whenever they ask to change the "
+                "story, characters or setting. Put the user's request/changes in "
+                "'notes'. Afterwards, present the story and ask what they'd change."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "shots": {
-                        "type": "integer",
-                        "description": "Optional explicit shot count; omit to let "
-                                       "the director choose from the song structure.",
-                    },
+                    "notes": {"type": "string", "description": "What to create or "
+                              "change, in the director's words. Omit for a fresh story."},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_shots",
+            "description": (
+                "STAGE 2 of directing — board the SHOT LIST for the current story: "
+                "each shot's time, framing, what happens, and whether it reuses a "
+                "library image or generates a new one. Still renders NOTHING. Call "
+                "this once the user is happy with the story and wants to see the shots/"
+                "images. Put any shot tweaks in 'notes'. Afterwards, summarise the "
+                "shots and ask for changes before rendering. You choose the count "
+                "unless the user asks for a specific number."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "notes": {"type": "string", "description": "Shot adjustments in "
+                              "the director's words."},
+                    "shots": {"type": "integer", "description": "Optional explicit "
+                              "shot count; omit to let the director decide."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_video",
+            "description": (
+                "STAGE 3 of directing — RENDER the approved shots: generate/reuse the "
+                "images and place them on the timeline with the title card and "
+                "beat-synced effects. This SPENDS generation budget — only call it "
+                "once the user has seen the shot list and explicitly approves "
+                "rendering (e.g. 'render it', 'go', 'make it', 'looks good, shoot it')."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "author_effect",
+            "description": (
+                "Create a BRAND-NEW custom filter effect from a vibe description and "
+                "place it at a time. Use when the user wants an effect that isn't well "
+                "covered by the AVAILABLE FILTERS list (e.g. 'a cool glitchy effect at "
+                "1:07', 'something dreamy and liquid here'). For a plain built-in that "
+                "already fits, use apply_effect instead. The new filter is authored in "
+                "the background and comes alive once built."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "brief": {"type": "string", "description": "What the effect should "
+                              "look/feel like, in the user's words."},
+                    "at": {"type": "number", "description": "start time in seconds"},
+                    "duration": {"type": "number", "description": "seconds (default 4)"},
+                    "band": {"type": "string", "enum": ["bass", "mid", "high"],
+                             "description": "which beat band drives it (default bass)"},
+                },
+                "required": ["brief", "at"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "revise_image",
+            "description": (
+                "Render a NEW VERSION of an EXISTING image in the project, found by "
+                "description. Use when the user references a specific image and wants a "
+                "fresh take, e.g. 'the image with the lady in blue, render a new "
+                "version' or 'redo the rooftop shot, make it rainier'. Identify the "
+                "image in 'description'; put any requested changes in 'changes'. The new "
+                "version keeps the original's identity (used as a reference) and lands "
+                "where the original sits on the timeline."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "Which existing "
+                                    "image to revise (what's in it / its name/tag)."},
+                    "changes": {"type": "string", "description": "What to change in the "
+                                "new version. Omit for a straight re-roll."},
+                },
+                "required": ["description"],
             },
         },
     },
@@ -213,6 +298,77 @@ def _resolve_references(pid: str, names: list[str]) -> list[bytes]:
     return out
 
 
+def _asset_bytes_one(asset: dict) -> bytes | None:
+    try:
+        return (config.DATA_DIR / asset["path"]).read_bytes()
+    except (OSError, KeyError, TypeError):
+        return None
+
+
+def _match_image(pid: str, desc: str) -> dict | None:
+    """Find the existing image that best matches a free-text description."""
+    from . import narrative  # token utils; narrative does not import chat
+    q = narrative._tokens(desc)
+    low = desc.lower()
+    best, score = None, 0.0
+    for a in db.list_media(pid):
+        if a.get("kind") != "image":
+            continue
+        toks = narrative._tokens(" ".join(filter(None, [
+            a.get("gen_prompt"), a.get("label"),
+            " ".join(a.get("tags") or []), a.get("original_name")])))
+        s = narrative._jaccard(q, toks)
+        if a.get("label") and a["label"].lower() in low:
+            s += 0.5
+        for t in (a.get("tags") or []):
+            if t and t.lower() in low:
+                s += 0.3
+        if s > score:
+            best, score = a, s
+    return best if score >= 0.12 else None
+
+
+def _timeline_spot(project: dict, asset_id: str) -> tuple[float, float | None] | None:
+    """Where an asset currently sits on the timeline (start, duration), if at all."""
+    for c in (project.get("timeline_json") or {}).get("clips") or []:
+        if c.get("assetId") == asset_id:
+            return (float(c.get("start") or 0.0), float(c.get("duration") or 0.0) or None)
+    return None
+
+
+def _effect_name(brief: str) -> str:
+    words = [w for w in re.findall(r"[A-Za-z]+", brief) if len(w) > 2][:2]
+    return (" ".join(w.capitalize() for w in words) or "Custom") + " FX"
+
+
+def _author_brief(project: dict, brief: str, band: str) -> str:
+    m = project.get("mood_json") or {}
+    pal = ", ".join((m.get("palette") or [])[:4])
+    return (
+        f"Create this music-video effect: {brief}. It transforms each incoming video "
+        f"frame and is beat-synced — react to ctx.{band} (0..1 envelope) and ctx.rms. "
+        f"Mood: {m.get('mood','')}. Use the palette {pal}. Expose intensity (slider), "
+        f"band (select bass/mid/high, default {band}) and enabled (switch) PARAMS. Pure "
+        "per-frame transform, no I/O. Keep it fast (runs per frame)."
+    )
+
+
+def _direction_state(project: dict) -> str:
+    """Tell the model where the in-progress direction stands (story / shots)."""
+    story = project.get("story_json")
+    script = project.get("script_json")
+    if not story and not script:
+        return "No story yet — start with develop_story when the user wants to direct."
+    parts = []
+    if story:
+        cast = ", ".join(c.get("name", "") for c in story.get("characters", []))
+        parts.append(f"STORY exists — logline: {story.get('logline')}; cast: {cast}")
+    if script:
+        parts.append(f"SHOT LIST exists — {len(script.get('shots', []))} shots proposed "
+                     "(not rendered until the user approves render_video)")
+    return " | ".join(parts)
+
+
 def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
     return (
         "You are the creative director inside a music video editor, helping the "
@@ -228,15 +384,27 @@ def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
         "A short audio clip of this exact section is attached so you can hear it.\n\n"
         "AVAILABLE FILTERS (use the exact id for apply_effect):\n"
         f"{_filter_catalog()}\n\n"
-        "TOOLS: call generate_image for a section image (vivid 16:9 prompt; include "
-        "reference names like \"Kevin in the bathroom\" when they exist). Call "
-        "add_text to put a title/caption on the timeline. Call apply_effect to add "
-        "a beat-synced filter over a time range. Call direct_video to auto-direct a "
-        "COMPLETE draft of the whole song (storyboard + generate/reuse images + "
-        "title + effects) when the user asks to direct/storyboard/make the whole "
-        "video or a draft — you choose the shot count. Use the current playhead time "
-        "as the default 'at'. Otherwise talk normally and help with creative "
-        "direction. Keep replies concise."
+        f"DIRECTION SO FAR: {_direction_state(project)}\n\n"
+        "TOOLS:\n"
+        "• generate_image — a new still for the current moment (vivid 16:9 prompt; "
+        "include reference names like \"Kevin in the bathroom\" when they exist).\n"
+        "• revise_image — render a NEW VERSION of an existing image the user points to "
+        "by description (e.g. \"the lady in blue\"); pass any changes.\n"
+        "• add_text — a title/caption at a time.\n"
+        "• apply_effect — add an existing beat-synced filter over a time range.\n"
+        "• author_effect — create a BRAND-NEW custom filter from a vibe (e.g. \"a cool "
+        "glitchy effect at 1:07\") when no built-in fits.\n"
+        "• develop_story → propose_shots → render_video — directing a full video is "
+        "ITERATIVE and done IN THAT ORDER, keeping the user in control:\n"
+        "   1) develop_story — write/revise the story, then present it and ask for "
+        "changes. Generates nothing.\n"
+        "   2) propose_shots — only once the user likes the story; board the shots, "
+        "present them, ask for changes. Renders nothing.\n"
+        "   3) render_video — only once the user approves the shots; this spends "
+        "budget. NEVER skip ahead to rendering.\n"
+        "Times: accept 'm:ss' or seconds; default 'at' to the current playhead. Keep "
+        "replies concise and conversational — you are collaborating, not narrating a "
+        "spec."
     )
 
 
@@ -419,25 +587,99 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
             actions.append({"type": "apply_effect", "filter_id": fid,
                             "name": fname, "at": at, "duration": dur})
             result = f"Applied {fname} from {_fmt_clock(at)} for {dur:.0f}s."
-        elif name == "direct_video":
+        elif name == "author_effect":
             from . import director  # lazy: director imports chat (avoid cycle)
+            brief_in = str(args.get("brief", "")).strip() or "a beat-reactive effect"
+            at = float(args.get("at", cursor_time) or cursor_time)
+            dur = float(args.get("duration") or 4)
+            band = args.get("band") if args.get("band") in ("bass", "mid", "high") else "bass"
             try:
-                shots = int(args["shots"]) if args.get("shots") is not None else None
+                detail = filters.create_blank(_effect_name(brief_in))
+                fid = detail["manifest"]["id"]
+                fname = detail["manifest"]["name"]
+                director._enqueue_filter_authoring(
+                    pid, fid, _author_brief(project, brief_in, band), fname)
+                actions.append({"type": "apply_effect", "filter_id": fid, "name": fname,
+                                "at": at, "duration": dur,
+                                "params": {"intensity": 1.0, "band": band, "enabled": True}})
+                result = (f"Authoring a custom “{fname}” effect (claude-opus) and placing "
+                          f"it at {_fmt_clock(at)} for {dur:.0f}s — it comes alive once built "
+                          "(watch the queue).")
+            except Exception as e:  # noqa: BLE001
+                result = f"Couldn't start the custom effect: {e}"
+        elif name == "revise_image" and img_count < MAX_IMAGES_PER_TURN:
+            img_count += 1
+            desc = str(args.get("description", "")).strip()
+            changes = str(args.get("changes", "")).strip()
+            asset = _match_image(pid, desc)
+            if not asset:
+                result = (f"I couldn't find an image matching “{desc[:40]}”. "
+                          "Try naming/tagging it, or describe it differently.")
+            else:
+                base = (asset.get("gen_prompt") or asset.get("label")
+                        or asset.get("original_name") or desc)
+                new_prompt = base + (f". {changes}" if changes else "")
+                ref = _asset_bytes_one(asset)
+                spot = _timeline_spot(project, asset["id"])
+                insert_at = spot[0] if spot else cursor_time
+                insert_dur = spot[1] if spot else None
+                lbl = asset.get("label") or " ".join(base.split()[:5]).strip()[:40] or "image"
+
+                def runner(p=new_prompt, r=([ref] if ref else None), a=asset):
+                    png = imagegen.generate_image(p, r)
+                    return _save_image_asset(pid, png, p, label=a.get("label"),
+                                             tags=a.get("tags"),
+                                             bible_entity=a.get("bible_entity"))
+
+                job = genqueue.submit(pid, "image", f"revise · {lbl[:22]}", runner,
+                                      insert_at=insert_at, insert_duration=insert_dur,
+                                      insert_meta={"motion": "zoom-in"})
+                queued.append({"id": job["id"], "kind": "image", "label": lbl[:40]})
+                result = (f"Re-rendering “{lbl[:30]}”"
+                          + (f" with: {changes}" if changes else "")
+                          + f"; the new version will land at {_fmt_clock(insert_at)}.")
+        elif name == "develop_story":
+            from . import director
+            out = director.develop_story(project, notes=args.get("notes"))
+            story = out["story"]
+            chars = "; ".join(f"{c['name']} ({c.get('role','')}) — {c['visual_anchor']}"
+                              for c in story.get("characters", []))
+            setts = "; ".join(f"{s['name']} — {s['visual_anchor']}"
+                              for s in story.get("settings", []))
+            result = (f"STORY drafted (nothing generated yet). Logline: {story.get('logline')}. "
+                      f"Theme: {story.get('theme')}. Motif: {story.get('motif')}. "
+                      f"Characters: {chars}. Settings: {setts}. "
+                      "Present this to the user conversationally and ask what they'd change "
+                      "before boarding shots.")
+        elif name == "propose_shots":
+            from . import director
+            try:
+                shots_n = int(args["shots"]) if args.get("shots") is not None else None
             except (TypeError, ValueError):
-                shots = None
-            direct = director.auto_direct(project, max_shots=shots)
+                shots_n = None
+            out = director.propose_shots(project, max_shots=shots_n, notes=args.get("notes"))
+            script, b = out["script"], out["broker"]
+            lst = "; ".join(
+                f"#{s['idx']+1} [{_fmt_clock(s['start'])}] {s.get('shot_size','')} — "
+                f"{(s.get('intent') or s.get('prompt_core',''))[:48]}"
+                for s in script["shots"])
+            result = (f"SHOT LIST proposed (still nothing rendered): {len(script['shots'])} "
+                      f"shots — {b['generate_count']} to generate, {b['reuse_count']} reused. "
+                      f"{lst}. Summarise these for the user and ask for changes; render only "
+                      "when they approve.")
+        elif name == "render_video":
+            from . import director
+            direct = director.render(project)
             for s in direct.get("plan", []):
                 queued.append({"id": s["job_id"], "kind": "image",
                                "label": f"shot {s['idx'] + 1}"})
-            bits = [f"directed {direct['generate_count']} new shot(s)"]
+            bits = [f"rendering {direct['generate_count']} shot(s)"]
             if direct.get("reuse_count"):
                 bits.append(f"reused {direct['reuse_count']}")
             if direct.get("new_filters"):
                 bits.append(f"authored {len(direct['new_filters'])} custom filter")
-            cast = ", ".join(c["name"] for c in direct.get("narrative", {}).get("characters", []))
-            result = (f"Boarded the whole song — {', '.join(bits)}. "
-                      f"Concept: {direct.get('concept', '')[:120]}"
-                      + (f". Cast: {cast}" if cast else ""))
+            result = (f"Rendering the approved board — {', '.join(bits)}. The title and "
+                      "effects are placed now; images land on the timeline as they finish.")
         else:
             result = "skipped"
         api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),

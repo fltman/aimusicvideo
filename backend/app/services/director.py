@@ -128,21 +128,58 @@ def auto_direct(project: dict, max_shots: Optional[int] = None) -> dict[str, Any
     The shot count is decided by the song's structure (section count + energy-driven
     pacing). ``max_shots`` is an optional explicit override; when omitted the director
     chooses, bounded only by ``MAX_SHOTS_CAP`` so cost can't run away.
-    """
-    pid = project["id"]
 
-    # ── plan (synchronous, ~2-4 fast LLM calls; every stage has a fallback) ──
-    # max_shots=None → segment_shots decides the count from the song structure.
-    rhythm = narrative.analyze_rhythm(project)
-    db.update_project_fields(pid, rhythm_json=rhythm)
-    story = narrative.analyze_story(project, rhythm)
-    db.update_project_fields(pid, story_json=story)
-    script = narrative.segment_shots(project, rhythm, story, max_shots)
-    db.update_project_fields(pid, script_json=script)
+    This is the all-in-one path (story → shots → render). The chat drives the same
+    stages one at a time via ``develop_story`` / ``propose_shots`` / ``render``.
+    """
+    develop_story(project)
+    propose_shots(project, max_shots=max_shots)
+    return render(db.get_project(project["id"]) or project)
+
+
+# ── staged, conversational entry points (used by the director chat) ───────────
+
+def develop_story(project: dict, notes: Optional[str] = None) -> dict:
+    """Stage 1: write or revise the STORY. No images. Persists story_json."""
+    project = db.get_project(project["id"]) or project
+    pid = project["id"]
+    rhythm = project.get("rhythm_json") or narrative.analyze_rhythm(project)
+    story = narrative.analyze_story(project, rhythm, prior=project.get("story_json"),
+                                    notes=notes)
+    db.update_project_fields(pid, rhythm_json=rhythm, story_json=story)
+    return {"rhythm": rhythm, "story": story}
+
+
+def propose_shots(project: dict, max_shots: Optional[int] = None,
+                  notes: Optional[str] = None) -> dict:
+    """Stage 2: board the SHOT LIST (reuse/generate decided). No render. Persists script_json."""
+    project = db.get_project(project["id"]) or project
+    pid = project["id"]
+    rhythm = project.get("rhythm_json") or narrative.analyze_rhythm(project)
+    story = project.get("story_json")
+    if not story:
+        story = narrative.analyze_story(project, rhythm)
+    script = narrative.segment_shots(project, rhythm, story, max_shots,
+                                     prior=project.get("script_json"), notes=notes)
+    db.update_project_fields(pid, rhythm_json=rhythm, story_json=story, script_json=script)
+    inventory = narrative.build_inventory(pid)
+    bplan = narrative.broker(project, story, script, inventory,
+                             project.get("bible_links_json") or {})
+    return {"story": story, "script": script, "broker": bplan}
+
+
+def render(project: dict) -> dict[str, Any]:
+    """Stage 3: generate/reuse images, lay title + effects, place on the timeline."""
+    project = db.get_project(project["id"]) or project
+    pid = project["id"]
+    rhythm = project.get("rhythm_json") or narrative.analyze_rhythm(project)
+    story = project.get("story_json") or narrative.analyze_story(project, rhythm)
+    script = project.get("script_json") or narrative.segment_shots(project, rhythm, story)
+    db.update_project_fields(pid, rhythm_json=rhythm, story_json=story, script_json=script)
 
     inventory = narrative.build_inventory(pid)
-    bible = project.get("bible_links_json") or {}
-    bplan = narrative.broker(project, story, script, inventory, bible)
+    bplan = narrative.broker(project, story, script, inventory,
+                             project.get("bible_links_json") or {})
     fx = narrative.plan_effects(project, rhythm, script, story)
 
     # ── enqueue authoring of any bespoke interlude filter (async) ──

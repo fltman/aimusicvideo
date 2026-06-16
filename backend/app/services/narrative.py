@@ -288,7 +288,20 @@ def _label(idx: int, total: int, energy: float, e_start: float, e_end: float,
 
 # ── Stage 1: STORY (LLM, with deterministic fallback) ─────────────────────────
 
-def analyze_story(project: dict, rhythm: dict) -> dict:
+_STORY_SCHEMA = (
+    '{"logline":"<1 sentence>","theme":"<short>","tone":"<short>","motif":"<a recurring visual>",'
+    '"characters":[{"id":"char-<slug>","name":"<short>","role":"protagonist|...",'
+    '"visual_anchor":"<FROZEN concrete physical description: age, build, hair, wardrobe, '
+    'distinguishing features, colour notes — detailed enough to redraw identically>",'
+    '"arc_note":"<how they change>"}],'
+    '"settings":[{"id":"set-<slug>","name":"<short>","visual_anchor":"<concrete recurring location>"}],'
+    '"motifs":[{"id":"mot-<slug>","name":"<short>","visual_form":"<concrete>"}],'
+    '"arc":[{"section_idx":<int>,"act":"setup|rising|climax|resolution","emotion":"<word>"}]}'
+)
+
+
+def analyze_story(project: dict, rhythm: dict, prior: Optional[dict] = None,
+                  notes: Optional[str] = None) -> dict:
     lyrics = sorted(project.get("lyrics_json") or [], key=lambda x: x["start"])
     transcript = "\n".join(f"[{_clock(l['start'])}] {l['text']}" for l in lyrics) \
         or "(instrumental — no lyrics)"
@@ -297,29 +310,34 @@ def analyze_story(project: dict, rhythm: dict) -> dict:
         f"(energy {s['energy']:.2f}{', instrumental' if s['is_instrumental'] else ''})"
         for s in rhythm["sections"]
     )
-    system = (
-        "You are a music-video screenwriter. From the FULL timestamped lyrics, the "
-        "mood, and the section map, infer the STORY the song tells and a small bible "
-        "to stage it consistently. Decide a clear through-line — it can be literal or "
-        "a single evocative visual metaphor, but it must be COHERENT and recur.\n\n"
-        "Return STRICT JSON: {"
-        '"logline":"<1 sentence>","theme":"<short>","tone":"<short>","motif":"<a recurring visual>",'
-        '"characters":[{"id":"char-<slug>","name":"<short>","role":"protagonist|...",'
-        '"visual_anchor":"<FROZEN concrete physical description: age, build, hair, wardrobe, '
-        'distinguishing features, colour notes — detailed enough to redraw identically>",'
-        '"arc_note":"<how they change>"}],'
-        '"settings":[{"id":"set-<slug>","name":"<short>","visual_anchor":"<concrete recurring location>"}],'
-        '"motifs":[{"id":"mot-<slug>","name":"<short>","visual_form":"<concrete>"}],'
-        '"arc":[{"section_idx":<int>,"act":"setup|rising|climax|resolution","emotion":"<word>"}]}'
-        " — 1 to 3 characters, 1 to 4 settings. visual_anchor strings are the load-bearing "
-        "part: be specific and consistent so the same subject can be regenerated."
-    )
-    user = (f"SONG: {project.get('name') or 'Untitled'} "
-            f"({rhythm['duration']:.0f}s, {rhythm['bpm']:.0f} BPM)\n\n"
-            f"MOOD: {_mood_brief(project)}\n\nSECTIONS:\n{sect}\n\nLYRICS:\n{transcript}")
+    ctx = (f"SONG: {project.get('name') or 'Untitled'} "
+           f"({rhythm['duration']:.0f}s, {rhythm['bpm']:.0f} BPM)\n\n"
+           f"MOOD: {_mood_brief(project)}\n\nSECTIONS:\n{sect}\n\nLYRICS:\n{transcript}")
+    if prior:
+        # revise: keep everything the notes don't touch
+        system = (
+            "You are revising an existing music-video story bible from the director's "
+            "notes. Change ONLY what the notes ask for; keep everything else intact "
+            "(ids, names, anchors). Return the FULL revised bible as STRICT JSON with "
+            f"the same schema: {_STORY_SCHEMA}"
+        )
+        user = (f"CURRENT BIBLE:\n{json.dumps(prior)}\n\n"
+                f"DIRECTOR NOTES: {notes or 'tighten coherence and vividness'}\n\n{ctx}")
+    else:
+        system = (
+            "You are a music-video screenwriter. From the FULL timestamped lyrics, the "
+            "mood, and the section map, infer the STORY the song tells and a small bible "
+            "to stage it consistently. Decide a clear through-line — it can be literal or "
+            "a single evocative visual metaphor, but it must be COHERENT and recur.\n\n"
+            f"Return STRICT JSON: {_STORY_SCHEMA}"
+            " — 1 to 3 characters, 1 to 4 settings. visual_anchor strings are the "
+            "load-bearing part: be specific and consistent so the same subject can be "
+            "regenerated."
+        )
+        user = ctx + (f"\n\nDIRECTOR NOTES: {notes}" if notes else "")
     data = _llm_json(system, user)
     if not data or not data.get("characters"):
-        return _story_fallback(project, rhythm)
+        return prior or _story_fallback(project, rhythm)
     # normalise / guard
     data.setdefault("logline", (project.get("mood_json") or {}).get("mood", "A wordless mood piece"))
     for key in ("characters", "settings", "motifs", "arc"):
@@ -379,9 +397,14 @@ def _suggest_count(rhythm: dict) -> int:
 
 
 def segment_shots(project: dict, rhythm: dict, story: dict,
-                  max_shots: Optional[int] = None) -> dict:
-    target = (_suggest_count(rhythm) if max_shots is None
-              else max(3, min(SHOT_CEILING, int(max_shots))))
+                  max_shots: Optional[int] = None, prior: Optional[dict] = None,
+                  notes: Optional[str] = None) -> dict:
+    # keep the prior shot count on a content revision (no explicit count given)
+    if max_shots is None and prior and prior.get("shots") and not _wants_recount(notes):
+        target = len(prior["shots"])
+    else:
+        target = (_suggest_count(rhythm) if max_shots is None
+                  else max(3, min(SHOT_CEILING, int(max_shots))))
     slots = _build_slots(project, rhythm, target)
     lyrics = sorted(project.get("lyrics_json") or [], key=lambda x: x["start"])
     for s in slots:
@@ -390,9 +413,18 @@ def segment_shots(project: dict, rhythm: dict, story: dict,
             if l["end"] > s["start"] and l["start"] < s["start"] + s["duration"]
         ).strip()
 
-    assigned = _assign_meaning(project, rhythm, story, slots)
+    assigned = _assign_meaning(project, rhythm, story, slots,
+                               prior=(prior or {}).get("shots"), notes=notes)
     return {"concept": assigned.get("concept", story.get("logline", "")),
             "shots": assigned["shots"]}
+
+
+def _wants_recount(notes: Optional[str]) -> bool:
+    if not notes:
+        return False
+    n = notes.lower()
+    return any(w in n for w in ("more shot", "fewer shot", "shots", "faster", "slower",
+                                "cut", "pace", "tighten", "longer", "shorter"))
 
 
 def _build_slots(project: dict, rhythm: dict, target: int) -> list[dict]:
@@ -461,7 +493,9 @@ def _build_slots(project: dict, rhythm: dict, target: int) -> list[dict]:
     return out[:target]
 
 
-def _assign_meaning(project: dict, rhythm: dict, story: dict, slots: list[dict]) -> dict:
+def _assign_meaning(project: dict, rhythm: dict, story: dict, slots: list[dict],
+                    prior: Optional[list[dict]] = None,
+                    notes: Optional[str] = None) -> dict:
     chars = story.get("characters") or []
     setts = story.get("settings") or []
     motifs = story.get("motifs") or []
@@ -498,6 +532,15 @@ def _assign_meaning(project: dict, rhythm: dict, story: dict, slots: list[dict])
         "ONLY for an instrumental slot that works as a pure graphic moment."
     )
     user = f"BIBLE: {bible}\n\nMOOD: {_mood_brief(project)}\n\nSHOT SLOTS:\n{slot_lines}"
+    if prior:
+        prior_brief = "\n".join(
+            f"{p['idx']}. {p.get('shot_size','')} | {p.get('intent') or p.get('prompt_core','')}"
+            for p in prior
+        )
+        user += (f"\n\nCURRENT BOARDING (revise this — keep shots the notes don't "
+                 f"mention; re-map by slot index):\n{prior_brief}")
+    if notes:
+        user += f"\n\nDIRECTOR NOTES (apply these): {notes}"
     data = _llm_json(system, user)
     designed = (data or {}).get("shots") or []
     by_idx = {d.get("idx"): d for d in designed if isinstance(d, dict)}
