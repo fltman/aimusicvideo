@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, db
 from .routers import (
-    chat, export, filters, media, projects, queue, song, timeline,
+    chat, director, export, filters, media, projects, queue, song, timeline,
 )
 from .services import filters as filters_service
 
@@ -40,6 +40,7 @@ app.include_router(chat.router)
 app.include_router(queue.router)
 app.include_router(filters.router)
 app.include_router(export.router)
+app.include_router(director.router)
 
 app.mount("/files", StaticFiles(directory=config.DATA_DIR), name="files")
 

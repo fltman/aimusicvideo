@@ -86,6 +86,10 @@ class FilterPreviewRequest(BaseModel):
     cursor_time: float = 0.0
 
 
+class AutoDirectRequest(BaseModel):
+    max_shots: int = 10
+
+
 class ExportRequest(BaseModel):
     resolution: str = "720p"
     fps: int = 30

@@ -25,10 +25,11 @@ _seq = 0
 
 def submit(
     project_id: str,
-    kind: str,                 # 'image' | 'video'
+    kind: str,                 # 'image' | 'video' | 'filter' | 'export'
     label: str,
     runner: Callable[[], dict],
     insert_at: Optional[float] = None,
+    insert_duration: Optional[float] = None,
 ) -> dict[str, Any]:
     """Enqueue a generation job. Returns the job record (status 'pending')."""
     global _seq
@@ -44,6 +45,7 @@ def submit(
             "asset": None,
             "error": None,
             "insert_at": insert_at,
+            "insert_duration": insert_duration,
             "seq": _seq,
         }
         job = dict(_JOBS[job_id])

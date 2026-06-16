@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 
 from .. import config, db
-from . import audio, genqueue, imagegen
+from . import audio, filters, genqueue, imagegen
 
 CHAT_MODEL = config.MOOD_MODEL  # google/gemini-3.5-flash
 _TIMEOUT = 90.0
@@ -63,7 +63,42 @@ TOOLS = [
                 "required": ["prompt"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_text",
+            "description": "Add a text/title overlay to the timeline at a time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "at": {"type": "number", "description": "start time in seconds"},
+                    "duration": {"type": "number", "description": "seconds (default 3)"},
+                    "position": {"type": "string",
+                                 "enum": ["top", "center", "bottom"]},
+                },
+                "required": ["text", "at"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "apply_effect",
+            "description": "Apply a filter effect over a time range. filter_id MUST "
+                           "be one from the AVAILABLE FILTERS list.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filter_id": {"type": "string"},
+                    "at": {"type": "number", "description": "start time in seconds"},
+                    "duration": {"type": "number", "description": "seconds"},
+                },
+                "required": ["filter_id", "at", "duration"],
+            },
+        },
+    },
 ]
 
 
@@ -165,13 +200,25 @@ def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
         "to keep characters/scenes consistent):\n"
         f"{catalog}\n\n"
         "A short audio clip of this exact section is attached so you can hear it.\n\n"
-        "When the user asks for an image/visual/shot for this section, call the "
-        "generate_image tool with one vivid, specific cinematic prompt (16:9) that "
-        "captures the mood, the lyrics and what you hear. If the user names a "
-        "character or scene that exists in the reference list (e.g. \"Kevin in the "
-        "bathroom\"), include those names in references. Otherwise, talk normally "
-        "and help with creative direction. Keep replies concise."
+        "AVAILABLE FILTERS (use the exact id for apply_effect):\n"
+        f"{_filter_catalog()}\n\n"
+        "TOOLS: call generate_image for a section image (vivid 16:9 prompt; include "
+        "reference names like \"Kevin in the bathroom\" when they exist). Call "
+        "add_text to put a title/caption on the timeline. Call apply_effect to add "
+        "a beat-synced filter over a time range. Use the current playhead time as "
+        "the default 'at'. Otherwise talk normally and help with creative "
+        "direction. Keep replies concise."
     )
+
+
+def _filter_catalog() -> str:
+    try:
+        items = filters.list_filters()
+    except Exception:
+        return "(none)"
+    lines = [f"- {f['id']}: {f.get('name', f['id'])}"
+             for f in items if not f.get("template")]
+    return "\n".join(lines[:40]) or "(none)"
 
 
 def _extract_section_audio(project: dict, cursor: float) -> str | None:
@@ -280,47 +327,64 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
     first = _post(api_messages, TOOLS)
     tool_calls = first.get("tool_calls") or []
     queued: list[dict] = []
+    actions: list[dict] = []      # timeline edits for the frontend to apply
     image_prompt: str | None = None
 
     if not tool_calls:
         return {"reply": first.get("content") or "", "image_prompt": None,
-                "queued": []}
+                "queued": [], "actions": []}
 
-    # Enqueue each requested image on the generation queue (runs async, max 3 at
-    # a time) so the user can keep editing. Then ask the model for a closing reply.
+    # Execute tool calls: images enqueue on the generation queue; add_text /
+    # apply_effect become actions the frontend applies. Then ask for a reply.
     api_messages.append({
         "role": "assistant",
         "content": first.get("content"),
         "tool_calls": tool_calls,
     })
-    for tc in tool_calls[:MAX_IMAGES_PER_TURN]:
+    img_count = 0
+    for tc in tool_calls:
         fn = tc.get("function", {})
-        if fn.get("name") != "generate_image":
-            api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),
-                                 "content": "unsupported tool"})
-            continue
+        name = fn.get("name")
         try:
             args = json.loads(fn.get("arguments") or "{}")
         except json.JSONDecodeError:
             args = {}
-        prompt = str(args.get("prompt", "")).strip()
-        image_prompt = prompt or image_prompt
-        ref_names = args.get("references") or []
-        ref_images = _resolve_references(pid, ref_names) if ref_names else None
-        label = " ".join(prompt.split()[:6]).strip()[:48] or "image"
 
-        def runner(p=prompt, refs=ref_images):
-            png = imagegen.generate_image(p, refs)
-            return _save_image_asset(pid, png, p)
+        if name == "generate_image" and img_count < MAX_IMAGES_PER_TURN:
+            img_count += 1
+            prompt = str(args.get("prompt", "")).strip()
+            image_prompt = prompt or image_prompt
+            ref_names = args.get("references") or []
+            ref_images = _resolve_references(pid, ref_names) if ref_names else None
+            label = " ".join(prompt.split()[:6]).strip()[:48] or "image"
 
-        job = genqueue.submit(pid, "image", label, runner, insert_at=cursor_time)
-        queued.append({"id": job["id"], "kind": "image", "label": label})
-        used = f" using {', '.join(ref_names)}" if ref_names else ""
-        result = (
-            f"Image queued{used} (job {job['id']}); it will be generated in the "
-            f"background and dropped onto the timeline at the playhead "
-            f"({_fmt_clock(cursor_time)}) when ready."
-        )
+            def runner(p=prompt, refs=ref_images):
+                png = imagegen.generate_image(p, refs)
+                return _save_image_asset(pid, png, p)
+
+            job = genqueue.submit(pid, "image", label, runner, insert_at=cursor_time)
+            queued.append({"id": job["id"], "kind": "image", "label": label})
+            used = f" using {', '.join(ref_names)}" if ref_names else ""
+            result = (f"Image queued{used}; it will drop onto the timeline at "
+                      f"{_fmt_clock(cursor_time)} when ready.")
+        elif name == "add_text":
+            text = str(args.get("text", "")).strip()
+            at = float(args.get("at", cursor_time) or cursor_time)
+            dur = float(args.get("duration") or 3)
+            pos = args.get("position") or "bottom"
+            actions.append({"type": "add_text", "text": text, "at": at,
+                            "duration": dur, "position": pos})
+            result = f"Added text “{text[:30]}” at {_fmt_clock(at)}."
+        elif name == "apply_effect":
+            fid = str(args.get("filter_id", ""))
+            at = float(args.get("at", cursor_time) or cursor_time)
+            dur = float(args.get("duration") or 4)
+            fname = (filters._read_manifest(fid) or {}).get("name", fid)
+            actions.append({"type": "apply_effect", "filter_id": fid,
+                            "name": fname, "at": at, "duration": dur})
+            result = f"Applied {fname} from {_fmt_clock(at)} for {dur:.0f}s."
+        else:
+            result = "skipped"
         api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),
                              "content": result})
 
@@ -328,8 +392,6 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
         closing = _post(api_messages, None)
         reply = closing.get("content") or "Done."
     except Exception:
-        reply = (
-            f"Queued {len(queued)} image(s) — they'll drop onto the timeline when ready."
-            if queued else "I couldn't queue the image this time."
-        )
-    return {"reply": reply, "image_prompt": image_prompt, "queued": queued}
+        reply = "Done."
+    return {"reply": reply, "image_prompt": image_prompt, "queued": queued,
+            "actions": actions}

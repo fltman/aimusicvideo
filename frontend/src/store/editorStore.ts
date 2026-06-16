@@ -148,14 +148,14 @@ export interface EditorState {
   select: (clipId: string | null) => void;
   toggleSelect: (clipId: string) => void;
   removeSelected: () => void;
-  addTextClip: (text: string) => void;
+  addTextClip: (text: string, start?: number, duration?: number, position?: 'top' | 'center' | 'bottom') => void;
   updateClipText: (clipId: string, patch: Partial<Clip>) => void;
   addTrack: (kind: TrackKind, name?: string) => Track;
   ensureTrack: (kind: TrackKind) => Track;
   removeTrack: (trackId: string) => void;
   moveTrack: (trackId: string, dir: -1 | 1) => void;
   toggleTrackHidden: (trackId: string) => void;
-  addClipFromAsset: (asset: MediaAsset, start?: number, trackId?: string) => void;
+  addClipFromAsset: (asset: MediaAsset, start?: number, trackId?: string, duration?: number) => void;
   moveClip: (clipId: string, newStart: number, newTrackId?: string) => void;
   updateClip: (clipId: string, patch: Partial<Clip>) => void;
   trimClip: (clipId: string, edge: 'start' | 'end', newTimelineTime: number) => void;
@@ -164,7 +164,7 @@ export interface EditorState {
   removeClip: (clipId: string) => void;
 
   // effect clips + filter workspace
-  addEffectClip: (filterId: string, name: string) => void;
+  addEffectClip: (filterId: string, name: string, start?: number, duration?: number) => void;
   updateClipParams: (clipId: string, params: Record<string, unknown>) => void;
   setClipFilter: (clipId: string, filterId: string, name: string) => void;
   openFilterWorkspace: (clipId: string) => void;
@@ -459,7 +459,7 @@ export const useEditor = create<EditorState>((set, get) => {
       });
     },
 
-    addTextClip(text) {
+    addTextClip(text, start, duration, position) {
       const track = get().ensureTrack('text');
       const clip: Clip = {
         id: uid(),
@@ -467,11 +467,11 @@ export const useEditor = create<EditorState>((set, get) => {
         assetId: null,
         name: text,
         text,
-        textPosition: 'bottom',
+        textPosition: position ?? 'bottom',
         textColor: '#ffffff',
         textSize: 1,
-        start: Math.max(0, get().currentTime),
-        duration: 3,
+        start: Math.max(0, start ?? get().currentTime),
+        duration: duration ?? 3,
         inPoint: 0,
         color: '#3aa0a0',
       };
@@ -546,15 +546,16 @@ export const useEditor = create<EditorState>((set, get) => {
       });
     },
 
-    addClipFromAsset(asset, start, trackId) {
+    addClipFromAsset(asset, start, trackId, duration) {
       const kind: TrackKind = asset.kind === 'audio' ? 'audio' : asset.kind;
       const track = trackId
         ? get().tracks.find((t) => t.id === trackId)!
         : get().ensureTrack(kind);
       const dur =
-        asset.kind === 'image'
+        duration ??
+        (asset.kind === 'image'
           ? DEFAULT_IMAGE_DURATION
-          : asset.duration_sec ?? DEFAULT_IMAGE_DURATION;
+          : asset.duration_sec ?? DEFAULT_IMAGE_DURATION);
       const at = start ?? get().currentTime;
       const clip: Clip = {
         id: uid(),
@@ -676,7 +677,7 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     // ── effect clips + filter workspace ─────────────────────────────────
-    addEffectClip(filterId, name) {
+    addEffectClip(filterId, name, start, duration) {
       const track = get().ensureTrack('effect');
       const clip: Clip = {
         id: uid(),
@@ -685,8 +686,8 @@ export const useEditor = create<EditorState>((set, get) => {
         filterId,
         params: {},
         name,
-        start: Math.max(0, get().currentTime),
-        duration: 4,
+        start: Math.max(0, start ?? get().currentTime),
+        duration: duration ?? 4,
         inPoint: 0,
         color: '#9b6df0',
       };

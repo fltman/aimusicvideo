@@ -99,6 +99,13 @@ export const api = {
       json('POST', body),
     ),
 
+  // ── AI auto-director ──────────────────────────────────────────────────
+  autoDirect: (id: string, maxShots: number) =>
+    req<{ shots: number; plan: unknown[] }>(
+      `${API}/projects/${id}/auto-direct`,
+      json('POST', { max_shots: maxShots }),
+    ),
+
   // ── generation queue ──────────────────────────────────────────────────
   listQueue: (id: string) => req<GenJob[]>(`${API}/projects/${id}/queue`),
   jobStatus: (jobId: string) => req<GenJob>(`${API}/job/${jobId}`),

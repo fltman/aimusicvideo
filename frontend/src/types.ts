@@ -41,10 +41,21 @@ export interface QueuedRef {
   label: string;
 }
 
+export interface ChatAction {
+  type: 'add_text' | 'apply_effect';
+  text?: string;
+  at?: number;
+  duration?: number;
+  position?: 'top' | 'center' | 'bottom';
+  filter_id?: string;
+  name?: string;
+}
+
 export interface ChatResponse {
   reply: string;
   image_prompt: string | null;
   queued: QueuedRef[];
+  actions: ChatAction[];
 }
 
 export interface AnimateStart {
@@ -63,6 +74,7 @@ export interface GenJob {
   asset: MediaAsset | null;
   error: string | null;
   insert_at: number | null;
+  insert_duration: number | null;
   seq: number;
 }
 

@@ -6,6 +6,7 @@ import type { ChatMessage } from '../types';
 
 interface Msg extends ChatMessage {
   queued?: number;
+  edits?: number;
 }
 
 /** Live playhead time — isolated so the chat list doesn't re-render each frame. */
@@ -18,6 +19,8 @@ function CursorBadge() {
  *  the timeline at the playhead by the global generation poller when ready. */
 export default function ChatPanel({ className = '' }: { className?: string }) {
   const projectId = useEditor((s) => s.projectId);
+  const addTextClip = useEditor((s) => s.addTextClip);
+  const addEffectClip = useEditor((s) => s.addEffectClip);
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -42,9 +45,22 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
         content: m.content,
       }));
       const res = await api.chat(projectId, apiHistory, cursor);
+      // apply any timeline edits the director requested
+      for (const a of res.actions ?? []) {
+        if (a.type === 'add_text' && a.text) {
+          addTextClip(a.text, a.at, a.duration, a.position);
+        } else if (a.type === 'apply_effect' && a.filter_id) {
+          addEffectClip(a.filter_id, a.name ?? a.filter_id, a.at, a.duration);
+        }
+      }
       setMessages((m) => [
         ...m,
-        { role: 'assistant', content: res.reply, queued: res.queued.length },
+        {
+          role: 'assistant',
+          content: res.reply,
+          queued: res.queued.length,
+          edits: (res.actions ?? []).length,
+        },
       ]);
     } catch (e) {
       setMessages((m) => [
@@ -92,6 +108,11 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
                 <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-accent">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                   Queued {m.queued} image{m.queued > 1 ? 's' : ''} — generating…
+                </p>
+              )}
+              {!!m.edits && (
+                <p className="mt-1 text-[10px] text-high">
+                  ✓ {m.edits} timeline edit{m.edits > 1 ? 's' : ''} applied
                 </p>
               )}
             </div>

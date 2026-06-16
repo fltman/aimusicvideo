@@ -8,6 +8,7 @@ import PreviewStage from '../components/PreviewStage';
 import RightPanel from '../components/RightPanel';
 import ChatDock from '../components/ChatDock';
 import GenerationQueue from '../components/GenerationQueue';
+import AutoDirectButton from '../components/AutoDirectButton';
 import ExportButton from '../components/ExportButton';
 import ResizeHandle from '../components/ResizeHandle';
 import FilterWorkspace from '../components/FilterWorkspace';
@@ -101,7 +102,12 @@ export default function EditorView({ projectId }: { projectId: string }) {
             handledJobs.current.add(job.id);
             await refreshMedia();
             if (job.asset && job.insert_at != null) {
-              addClipFromAsset(job.asset, job.insert_at);
+              addClipFromAsset(
+                job.asset,
+                job.insert_at,
+                undefined,
+                job.insert_duration ?? undefined,
+              );
             }
           } else if (job.status === 'error') {
             handledJobs.current.add(job.id);
@@ -192,6 +198,7 @@ export default function EditorView({ projectId }: { projectId: string }) {
         </h1>
         <div className="ml-auto flex items-center gap-3">
           <GenerationQueue jobs={genJobs} />
+          <AutoDirectButton />
           <ExportButton />
           <Transport />
         </div>
