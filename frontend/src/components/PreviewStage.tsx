@@ -18,6 +18,13 @@ export default function PreviewStage({ className = '' }: { className?: string })
   const palette = useEditor((s) => s.analysis?.mood?.palette ?? null);
   const previewAsset = useEditor((s) => s.previewAsset);
   const setPreviewAsset = useEditor((s) => s.setPreviewAsset);
+  const aspect = useEditor((s) => s.project?.aspect ?? '16:9');
+
+  const arCss = aspect === '9:16' ? '9 / 16' : aspect === '1:1' ? '1 / 1' : '16 / 9';
+  const stageStyle: React.CSSProperties =
+    aspect === '16:9'
+      ? { aspectRatio: arCss, width: '100%', maxHeight: '100%' }
+      : { aspectRatio: arCss, height: '100%', maxWidth: '100%' };
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -51,7 +58,10 @@ export default function PreviewStage({ className = '' }: { className?: string })
     <div
       className={`flex h-full items-center justify-center bg-[#0a0a0d] p-4 ${className}`}
     >
-      <div className="relative aspect-video w-full max-h-full overflow-hidden rounded-lg bg-black ring-1 ring-edge shadow-2xl">
+      <div
+        style={stageStyle}
+        className="relative max-h-full overflow-hidden rounded-lg bg-black ring-1 ring-edge shadow-2xl"
+      >
         {/* Source preview: a media-library asset shown directly (overrides timeline) */}
         {previewAsset ? (
           <>

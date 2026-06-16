@@ -210,7 +210,10 @@ export interface TimelineDoc {
   clips: Clip[];
 }
 
+export type Aspect = '16:9' | '9:16' | '1:1';
+
 export interface ProjectFull extends ProjectSummary {
+  aspect?: Aspect;
   song_original_name: string | null;
   song_wav_path: string | null;
   analysis_stage: string | null;

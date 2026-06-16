@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 
 from .. import config, db
 from ..models import AnimateRequest, MediaUpdate
-from ..services import audio, genqueue, videogen
+from ..services import audio, chat as chat_service, genqueue, imagegen, videogen
 
 router = APIRouter(prefix="/api/projects/{pid}/media", tags=["media"])
 
@@ -75,14 +75,37 @@ def animate(pid: str, asset_id: str, body: AnimateRequest) -> dict:
     img_path = config.DATA_DIR / asset["path"]
     prompt = body.prompt or ""
     duration = body.duration
+    aspect = (db.get_project(pid) or {}).get("aspect") or "16:9"
 
     def runner() -> dict:
-        mp4 = videogen.image_to_video(img_path.read_bytes(), prompt, duration)
+        mp4 = videogen.image_to_video(img_path.read_bytes(), prompt, duration, aspect)
         return videogen.save_video_asset(pid, mp4, asset, prompt)
 
     label = asset.get("label") or asset.get("original_name") or "clip"
     job = genqueue.submit(pid, "video", f"{label} → video", runner)
     return {"job_id": job["id"], "status": job["status"]}
+
+
+@router.post("/{asset_id}/vary")
+def vary(pid: str, asset_id: str) -> dict:
+    asset = db.get_media(asset_id)
+    if asset is None or asset["project_id"] != pid:
+        raise HTTPException(404, "Asset not found")
+    if asset["kind"] != "image":
+        raise HTTPException(400, "Only images can be varied")
+    img_path = config.DATA_DIR / asset["path"]
+    label = asset.get("label") or asset.get("original_name") or "image"
+
+    def runner() -> dict:
+        png = imagegen.generate_image(
+            "A fresh variation of this image — keep the same subject, mood and "
+            "style, but vary the composition and details.",
+            [img_path.read_bytes()],
+        )
+        return chat_service._save_image_asset(pid, png, label)
+
+    job = genqueue.submit(pid, "image", f"vary · {label}", runner)
+    return {"job_id": job["id"]}
 
 
 @router.patch("/{asset_id}")

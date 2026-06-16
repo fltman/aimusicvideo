@@ -29,6 +29,57 @@ from .runner import Compositor, compute_envelope, compute_rms
 WINDOW_SEC = 4.0
 
 
+def _audio_inputs(tracks, clips, media, song_wav, r_start, r_end):
+    """Audio sources active in [r_start, r_end]: (path, src_in, dur, delay)."""
+    hidden = {t["id"] for t in tracks if t.get("hidden")}
+    audio_ids = {t["id"] for t in tracks
+                 if t.get("kind") == "audio" and t["id"] not in hidden}
+    out = []
+    for c in clips:
+        if c.get("trackId") not in audio_ids:
+            continue
+        a = max(r_start, c["start"])
+        b = min(r_end, c["start"] + c["duration"])
+        if b <= a:
+            continue
+        if c.get("source") == "song":
+            path = song_wav
+        elif c.get("assetId") and media.get(c["assetId"]) \
+                and media[c["assetId"]]["kind"] == "audio":
+            path = media[c["assetId"]]["path"]
+        else:
+            continue
+        if not path or not Path(path).exists():
+            continue
+        src_in = (c.get("inPoint", 0.0) or 0.0) + (a - c["start"])
+        out.append((path, src_in, b - a, a - r_start))
+    return out
+
+
+def _mux_audio(raw_out, out_path, inputs):
+    if not inputs:
+        Path(raw_out).replace(out_path)
+        return
+    cmd = ["ffmpeg", "-y", "-i", raw_out]
+    for path, *_ in inputs:
+        cmd += ["-i", path]
+    parts = []
+    for i, (_p, src_in, dur, delay) in enumerate(inputs):
+        dms = int(delay * 1000)
+        parts.append(
+            f"[{i + 1}:a]atrim=start={src_in}:duration={dur},"
+            f"asetpts=PTS-STARTPTS,adelay={dms}|{dms}[a{i}]")
+    labels = "".join(f"[a{i}]" for i in range(len(inputs)))
+    parts.append(f"{labels}amix=inputs={len(inputs)}:normalize=0[aout]")
+    cmd += ["-filter_complex", ";".join(parts), "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-shortest", out_path]
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0 or not Path(out_path).exists():
+        Path(raw_out).replace(out_path)  # fall back to silent video
+    else:
+        Path(raw_out).unlink(missing_ok=True)
+
+
 def _active_lyric(lyrics, t):
     for ly in lyrics:
         if ly["start"] <= t < ly["end"]:
@@ -194,17 +245,9 @@ def main():
     enc.wait()
 
     out_path = spec["output"]
-    song = spec.get("song_wav")
-    if song and Path(song).exists():
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", raw_out, "-ss", str(r_start), "-t", str(span),
-             "-i", song, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac",
-             "-shortest", out_path],
-            stderr=subprocess.DEVNULL,
-        )
-        Path(raw_out).unlink(missing_ok=True)
-    else:
-        Path(raw_out).replace(out_path)
+    inputs = _audio_inputs(tracks, clips, media, spec.get("song_wav"),
+                           r_start, r_end)
+    _mux_audio(raw_out, out_path, inputs)
     if progress_file:
         Path(progress_file).write_text(json.dumps({"progress": 1.0}))
 

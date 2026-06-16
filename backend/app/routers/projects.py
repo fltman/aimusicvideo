@@ -33,8 +33,13 @@ def get_project(pid: str) -> dict:
 def update_project(pid: str, body: ProjectUpdate) -> dict:
     if db.get_project(pid) is None:
         raise HTTPException(404, "Project not found")
+    fields = {}
     if body.name is not None:
-        db.update_project_fields(pid, name=body.name)
+        fields["name"] = body.name
+    if body.aspect in ("16:9", "9:16", "1:1"):
+        fields["aspect"] = body.aspect
+    if fields:
+        db.update_project_fields(pid, **fields)
     project = db.get_project(pid)
     if not project:
         raise HTTPException(404, "Project not found")

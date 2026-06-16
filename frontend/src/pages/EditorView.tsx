@@ -36,6 +36,8 @@ export default function EditorView({ projectId }: { projectId: string }) {
   const refreshMedia = useEditor((s) => s.refreshMedia);
   const addClipFromAsset = useEditor((s) => s.addClipFromAsset);
   const togglePlay = useEditor((s) => s.togglePlay);
+  const setAspect = useEditor((s) => s.setAspect);
+  const aspect = useEditor((s) => s.project?.aspect ?? '16:9');
 
   const project = useEditor((s) => s.project);
   const loading = useEditor((s) => s.loading);
@@ -196,6 +198,24 @@ export default function EditorView({ projectId }: { projectId: string }) {
         <h1 className="truncate text-sm font-medium">
           {project?.name ?? (loading ? 'Loading…' : 'Project')}
         </h1>
+        {hasSong && (
+          <div className="ml-2 flex overflow-hidden rounded-md ring-1 ring-edge">
+            {(['16:9', '9:16', '1:1'] as const).map((a) => (
+              <button
+                key={a}
+                onClick={() => setAspect(a)}
+                className={`px-2 py-1 text-[11px] ${
+                  aspect === a
+                    ? 'bg-accent text-white'
+                    : 'bg-panel3 text-white/50 hover:text-white'
+                }`}
+                title={`Aspect ${a}`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-3">
           <GenerationQueue jobs={genJobs} />
           <AutoDirectButton />

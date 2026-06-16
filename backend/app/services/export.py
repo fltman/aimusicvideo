@@ -15,18 +15,26 @@ from pathlib import Path
 from .. import config, db
 from . import genqueue
 
-RESOLUTIONS = {
-    "480p": (854, 480),
-    "720p": (1280, 720),
-    "1080p": (1920, 1080),
-}
+_HEIGHTS = {"480p": 480, "720p": 720, "1080p": 1080}
+_ASPECTS = {"16:9": (16, 9), "9:16": (9, 16), "1:1": (1, 1)}
+
+
+def _dims(resolution: str, aspect: str) -> tuple[int, int]:
+    """Resolution names the SHORT side (720p → 720). Returns even (w, h)."""
+    short = _HEIGHTS.get(resolution, 720)
+    aw, ah = _ASPECTS.get(aspect, (16, 9))
+    if aw >= ah:  # landscape / square: short = height
+        h, w = short, round(short * aw / ah)
+    else:         # portrait: short = width
+        w, h = short, round(short * ah / aw)
+    return w + (w % 2), h + (h % 2)
 
 
 def start_export(project: dict, resolution: str = "720p", fps: int = 30,
                  burn_lyrics: bool = True, range_start: float | None = None,
                  range_end: float | None = None) -> tuple[dict, str]:
     pid = project["id"]
-    w, h = RESOLUTIONS.get(resolution, RESOLUTIONS["720p"])
+    w, h = _dims(resolution, project.get("aspect") or "16:9")
     tl = project.get("timeline_json") or {"tracks": [], "clips": []}
     tracks = tl.get("tracks", [])
     clips = tl.get("clips", [])

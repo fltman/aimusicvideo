@@ -125,6 +125,7 @@ export interface EditorState {
   // media
   refreshMedia: () => Promise<void>;
   setPreviewAsset: (asset: MediaAsset | null) => void;
+  setAspect: (aspect: string) => void;
 
   snapEnabled: boolean;
 
@@ -383,6 +384,13 @@ export const useEditor = create<EditorState>((set, get) => {
     setPreviewAsset(asset) {
       if (asset) get().pause(); // entering source-preview pauses timeline playback
       set({ previewAsset: asset });
+    },
+
+    setAspect(aspect) {
+      const { projectId, project } = get();
+      if (!projectId || !project) return;
+      set({ project: { ...project, aspect: aspect as ProjectFull['aspect'] } });
+      api.setProjectAspect(projectId, aspect).catch(() => {});
     },
 
     // ── transport ──────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    aspect: Optional[str] = None  # '16:9' | '9:16' | '1:1'
 
 
 class Track(BaseModel):

@@ -95,6 +95,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("label", "tags"):
         if col not in cols:
             conn.execute(f"ALTER TABLE media_assets ADD COLUMN {col} TEXT")
+    pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
+    if "aspect" not in pcols:
+        conn.execute("ALTER TABLE projects ADD COLUMN aspect TEXT DEFAULT '16:9'")
 
 
 def _row_to_project(row: sqlite3.Row) -> dict[str, Any]:

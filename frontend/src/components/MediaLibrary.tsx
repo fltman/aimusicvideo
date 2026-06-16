@@ -239,13 +239,25 @@ export default function MediaLibrary({ className = '' }: { className?: string })
 
                 <div className="absolute right-1 top-1 hidden gap-1 group-hover:flex">
                   {asset.kind === 'image' && (
-                    <button
-                      onClick={(e) => openAnimate(e, asset)}
-                      className="flex h-5 w-5 items-center justify-center rounded bg-black/60 text-[10px] text-white/70 hover:text-high"
-                      title="Turn into video"
-                    >
-                      🎬
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (projectId) api.varyImage(projectId, asset.id);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded bg-black/60 text-[10px] text-white/70 hover:text-accent"
+                        title="Generate a variation"
+                      >
+                        🎲
+                      </button>
+                      <button
+                        onClick={(e) => openAnimate(e, asset)}
+                        className="flex h-5 w-5 items-center justify-center rounded bg-black/60 text-[10px] text-white/70 hover:text-high"
+                        title="Turn into video"
+                      >
+                        🎬
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={(e) => startEdit(e, asset)}

@@ -50,6 +50,8 @@ export const api = {
   getProject: (id: string) => req<ProjectFull>(`${API}/projects/${id}`),
   updateProject: (id: string, name: string) =>
     req<ProjectFull>(`${API}/projects/${id}`, json('PATCH', { name })),
+  setProjectAspect: (id: string, aspect: string) =>
+    req<ProjectFull>(`${API}/projects/${id}`, json('PATCH', { aspect })),
   deleteProject: (id: string) =>
     req<void>(`${API}/projects/${id}`, { method: 'DELETE' }),
 
@@ -104,6 +106,12 @@ export const api = {
     req<{ shots: number; plan: unknown[] }>(
       `${API}/projects/${id}/auto-direct`,
       json('POST', { max_shots: maxShots }),
+    ),
+
+  varyImage: (id: string, assetId: string) =>
+    req<{ job_id: string }>(
+      `${API}/projects/${id}/media/${assetId}/vary`,
+      { method: 'POST' },
     ),
 
   // ── generation queue ──────────────────────────────────────────────────
