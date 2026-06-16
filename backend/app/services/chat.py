@@ -423,9 +423,15 @@ def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
         "present them, ask for changes. Renders nothing.\n"
         "   3) render_video — only once the user approves the shots; this spends "
         "budget. NEVER skip ahead to rendering.\n"
-        "Times: accept 'm:ss' or seconds; default 'at' to the current playhead. Keep "
-        "replies concise and conversational — you are collaborating, not narrating a "
-        "spec.\n\n"
+        "Times: accept 'm:ss' or seconds; default 'at' to the current playhead.\n\n"
+        "BE A COLLABORATOR, NOT A BUTTON. You can discuss and revise the direction at "
+        "ANY point — including after a story or shots already exist. When the user "
+        "shares an idea or reference (e.g. 'Blade Runner aesthetic', 'make it warmer', "
+        "'more rain'), ENGAGE with it: acknowledge it, fold it into the story/shots by "
+        "calling develop_story or propose_shots with that note, and then describe the "
+        "result vividly. After EVERY action, reply with a substantive, conversational "
+        "message about what changed and invite the user's reaction. NEVER reply with "
+        "just 'Done.' or a single word.\n\n"
         "FORMAT replies in compact GitHub markdown: **bold** for character/shot "
         "names, bullet or numbered lists for shots/options, short paragraphs. When "
         "presenting a shot list, use a numbered list with the time and a short beat "
@@ -556,6 +562,7 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
     tool_calls = first.get("tool_calls") or []
     queued: list[dict] = []
     actions: list[dict] = []      # timeline edits for the frontend to apply
+    summaries: list[str] = []     # user-facing tool summaries (closing-reply fallback)
     image_prompt: str | None = None
     direct: dict | None = None    # full auto-direct result for the frontend to apply
 
@@ -673,9 +680,7 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
                               for s in story.get("settings", []))
             result = (f"STORY drafted (nothing generated yet). Logline: {story.get('logline')}. "
                       f"Theme: {story.get('theme')}. Motif: {story.get('motif')}. "
-                      f"Characters: {chars}. Settings: {setts}. "
-                      "Present this to the user conversationally and ask what they'd change "
-                      "before boarding shots.")
+                      f"Characters: {chars}. Settings: {setts}.")
         elif name == "generate_moodboard":
             from . import director
             try:
@@ -686,8 +691,7 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
             for b in mb["board"]:
                 queued.append({"id": b["job_id"], "kind": "image", "label": "moodboard"})
             result = (f"Generating a {mb['count']}-frame moodboard to capture the "
-                      "feeling — it'll appear in the media library shortly. Ask the user "
-                      "whether the vibe is right before casting and rendering.")
+                      "feeling — it'll appear in the media library shortly.")
         elif name == "propose_shots":
             from . import director
             try:
@@ -702,8 +706,7 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
                 for s in script["shots"])
             result = (f"SHOT LIST proposed (still nothing rendered): {len(script['shots'])} "
                       f"shots — {b['generate_count']} to generate, {b['reuse_count']} reused. "
-                      f"{lst}. Summarise these for the user and ask for changes; render only "
-                      "when they approve.")
+                      f"{lst}.")
         elif name == "render_video":
             from . import director
             direct = director.render(project)
@@ -740,13 +743,23 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
                 "they generate.")
         else:
             result = "skipped"
+        summaries.append(result)
         api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),
                              "content": result})
 
+    # Closing turn: force a substantive, conversational reply (gemini sometimes
+    # returns empty content after tool results → the old code showed just "Done.").
+    nudge = {"role": "user", "content": (
+        "Now reply to me directly and conversationally — describe what you just did "
+        "or changed in vivid, concrete terms and invite my reaction. Do not call "
+        "tools; just talk to me. Never answer with one word.")}
+    reply = ""
     try:
-        closing = _post(api_messages, None)
-        reply = closing.get("content") or "Done."
+        closing = _post(api_messages + [nudge], None)
+        reply = (closing.get("content") or "").strip()
     except Exception:
-        reply = "Done."
+        reply = ""
+    if not reply:
+        reply = "\n\n".join(summaries).strip() or "Done."
     return {"reply": reply, "image_prompt": image_prompt, "queued": queued,
             "actions": actions, "direct": direct}
