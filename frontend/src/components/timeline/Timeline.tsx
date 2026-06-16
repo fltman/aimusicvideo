@@ -38,6 +38,10 @@ export default function Timeline({ className }: { className?: string }) {
   const moveTrack = useEditor((s) => s.moveTrack);
   const toggleTrackHidden = useEditor((s) => s.toggleTrackHidden);
   const addEffectClip = useEditor((s) => s.addEffectClip);
+  const undo = useEditor((s) => s.undo);
+  const redo = useEditor((s) => s.redo);
+  const snapEnabled = useEditor((s) => s.snapEnabled);
+  const toggleSnap = useEditor((s) => s.toggleSnap);
   const seek = useEditor((s) => s.seek);
   const select = useEditor((s) => s.select);
 
@@ -128,6 +132,37 @@ export default function Timeline({ className }: { className?: string }) {
         >
           ✨ Filters
         </button>
+
+        <div className="ml-3 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={undo}
+            className="rounded border border-edge bg-panel2 px-2 py-1 hover:border-accent hover:text-white"
+            title="Undo (⌘Z)"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            className="rounded border border-edge bg-panel2 px-2 py-1 hover:border-accent hover:text-white"
+            title="Redo (⇧⌘Z)"
+          >
+            ↷
+          </button>
+          <button
+            type="button"
+            onClick={toggleSnap}
+            className={`rounded border px-2 py-1 ${
+              snapEnabled
+                ? 'border-accent/50 bg-accent/15 text-accent'
+                : 'border-edge bg-panel2 hover:text-white'
+            }`}
+            title={snapEnabled ? 'Snapping on (to beats/edges)' : 'Snapping off'}
+          >
+            🧲
+          </button>
+        </div>
 
         <div className="ml-auto flex items-center gap-1">
           <button

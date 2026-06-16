@@ -22,7 +22,8 @@ RESOLUTIONS = {
 }
 
 
-def start_export(project: dict, resolution: str = "720p", fps: int = 30) -> tuple[dict, str]:
+def start_export(project: dict, resolution: str = "720p", fps: int = 30,
+                 burn_lyrics: bool = True) -> tuple[dict, str]:
     pid = project["id"]
     w, h = RESOLUTIONS.get(resolution, RESOLUTIONS["720p"])
     tl = project.get("timeline_json") or {"tracks": [], "clips": []}
@@ -63,6 +64,8 @@ def start_export(project: dict, resolution: str = "720p", fps: int = 30) -> tupl
         "tracks": tracks, "clips": clips, "media": media,
         "beats": project.get("beats_json") or {},
         "effects": effects,
+        "lyrics": project.get("lyrics_json") or [],
+        "burn_lyrics": burn_lyrics,
         "song_wav": song,
         "filters_dir": str(config.FILTERS_DIR),
         "data_dir": str(config.DATA_DIR),

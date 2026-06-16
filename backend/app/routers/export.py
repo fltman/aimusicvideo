@@ -17,7 +17,9 @@ def start_export(pid: str, body: ExportRequest) -> dict:
         raise HTTPException(404, "Project not found")
     if not project.get("song_wav_path"):
         raise HTTPException(400, "Upload a song first")
-    job, export_id = export_service.start_export(project, body.resolution, body.fps)
+    job, export_id = export_service.start_export(
+        project, body.resolution, body.fps, body.burn_lyrics,
+    )
     return {"job_id": job["id"], "export_id": export_id}
 
 

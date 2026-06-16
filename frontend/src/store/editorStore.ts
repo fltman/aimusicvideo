@@ -8,6 +8,7 @@ import type {
   Clip,
   MediaAsset,
   ProjectFull,
+  TimelineDoc,
   Track,
   TrackKind,
 } from '../types';
@@ -19,6 +20,19 @@ const SAVE_DEBOUNCE_MS = 600;
 let audioEl: HTMLAudioElement | null = null;
 let rafId = 0;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+// undo/redo history of the timeline doc (coalesced per gesture)
+let past: TimelineDoc[] = [];
+let future: TimelineDoc[] = [];
+let histBurst = false;
+let histTimer: ReturnType<typeof setTimeout> | null = null;
+const HIST_MAX = 120;
+const SNAP_PX = 8; // snap distance in pixels
+
+const snapshot = (tracks: Track[], clips: Clip[]): TimelineDoc => ({
+  tracks: tracks.map((t) => ({ ...t })),
+  clips: clips.map((c) => ({ ...c })),
+});
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -108,12 +122,17 @@ export interface EditorState {
   refreshMedia: () => Promise<void>;
   setPreviewAsset: (asset: MediaAsset | null) => void;
 
+  snapEnabled: boolean;
+
   // transport (audio is master clock)
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
   seek: (t: number) => void;
   setZoom: (pps: number) => void;
+  toggleSnap: () => void;
+  undo: () => void;
+  redo: () => void;
 
   // timeline editing
   select: (clipId: string | null) => void;
@@ -161,11 +180,55 @@ export const useEditor = create<EditorState>((set, get) => {
     }, SAVE_DEBOUNCE_MS);
   };
 
-  /** Apply a timeline mutation: set state, recompute duration, persist. */
+  /** Snapshot the pre-change timeline once per gesture burst (for undo). */
+  const captureHistory = () => {
+    if (!histBurst) {
+      const { tracks, clips } = get();
+      past.push(snapshot(tracks, clips));
+      if (past.length > HIST_MAX) past.shift();
+      future = [];
+      histBurst = true;
+    }
+    if (histTimer) clearTimeout(histTimer);
+    histTimer = setTimeout(() => {
+      histBurst = false;
+    }, 350);
+  };
+
+  /** Apply a timeline mutation: capture history, set state, recompute, persist. */
   const mutate = (next: Partial<EditorState>) => {
+    if ('tracks' in next || 'clips' in next) captureHistory();
     set(next);
     recomputeDuration();
     scheduleSave();
+  };
+
+  /** Nearest snap target (beats / playhead / clip edges / 0) within threshold. */
+  const snapTime = (t: number, excludeClipId?: string): number => {
+    if (!get().snapEnabled) return t;
+    const { pixelsPerSecond, analysis, clips, currentTime } = get();
+    const thresh = SNAP_PX / pixelsPerSecond;
+    const targets: number[] = [0, currentTime];
+    const b = analysis?.beats;
+    if (b) {
+      for (const band of [b.bass, b.mid, b.high]) {
+        if (band) for (const x of band) targets.push(x);
+      }
+    }
+    for (const c of clips) {
+      if (c.id === excludeClipId) continue;
+      targets.push(c.start, c.start + c.duration);
+    }
+    let best = t;
+    let bestD = thresh;
+    for (const x of targets) {
+      const d = Math.abs(x - t);
+      if (d < bestD) {
+        bestD = d;
+        best = x;
+      }
+    }
+    return best;
   };
 
   const tick = () => {
@@ -188,6 +251,7 @@ export const useEditor = create<EditorState>((set, get) => {
     currentTime: 0,
     duration: 1,
     pixelsPerSecond: 100,
+    snapEnabled: true,
     loading: false,
     analysisStatus: 'none',
     analysisStage: null,
@@ -196,6 +260,9 @@ export const useEditor = create<EditorState>((set, get) => {
       stopRaf();
       audioEl?.pause();
       audioEl = null;
+      past = [];
+      future = [];
+      histBurst = false;
       set({
         loading: true,
         projectId: id,
@@ -318,6 +385,30 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ pixelsPerSecond: Math.max(10, Math.min(600, pps)) });
     },
 
+    toggleSnap() {
+      set({ snapEnabled: !get().snapEnabled });
+    },
+
+    undo() {
+      if (!past.length) return;
+      const { tracks, clips } = get();
+      future.push(snapshot(tracks, clips));
+      const prev = past.pop()!;
+      set({ tracks: prev.tracks, clips: prev.clips, selectedClipId: null });
+      recomputeDuration();
+      scheduleSave();
+    },
+
+    redo() {
+      if (!future.length) return;
+      const { tracks, clips } = get();
+      past.push(snapshot(tracks, clips));
+      const next = future.pop()!;
+      set({ tracks: next.tracks, clips: next.clips, selectedClipId: null });
+      recomputeDuration();
+      scheduleSave();
+    },
+
     // ── editing ────────────────────────────────────────────────────────
     select(clipId) {
       set({ selectedClipId: clipId });
@@ -386,10 +477,28 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     moveClip(clipId, newStart, newTrackId) {
+      const clip = get().clips.find((c) => c.id === clipId);
+      let start = Math.max(0, newStart);
+      if (clip) {
+        // snap either the start or the end edge, whichever hits a target
+        const snapStart = snapTime(start, clipId);
+        const snapEnd = snapTime(start + clip.duration, clipId) - clip.duration;
+        const startSnapped = snapStart !== start;
+        const endSnapped = snapEnd !== start;
+        if (startSnapped && endSnapped) {
+          start = Math.abs(snapStart - start) <= Math.abs(snapEnd - start)
+            ? snapStart : snapEnd;
+        } else if (startSnapped) {
+          start = snapStart;
+        } else if (endSnapped) {
+          start = snapEnd;
+        }
+        start = Math.max(0, start);
+      }
       mutate({
         clips: get().clips.map((c) =>
           c.id === clipId
-            ? { ...c, start: Math.max(0, newStart), trackId: newTrackId ?? c.trackId }
+            ? { ...c, start, trackId: newTrackId ?? c.trackId }
             : c,
         ),
       });
@@ -406,6 +515,7 @@ export const useEditor = create<EditorState>((set, get) => {
       const songDur = project?.duration_sec ?? 0;
       const clip = clips.find((c) => c.id === clipId);
       if (!clip) return;
+      newTimelineTime = snapTime(newTimelineTime, clipId); // snap the dragged edge
       const srcDur = sourceDuration(clip, media, songDur);
       const MIN = 0.05;
 

@@ -125,6 +125,12 @@ export default function EditorView({ projectId }: { projectId: string }) {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) useEditor.getState().redo();
+        else useEditor.getState().undo();
+        return;
+      }
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();

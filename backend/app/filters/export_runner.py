@@ -21,11 +21,43 @@ import sys
 import types
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from .runner import Compositor, compute_envelope, compute_rms
 
 WINDOW_SEC = 4.0
+
+
+def _active_lyric(lyrics, t):
+    for ly in lyrics:
+        if ly["start"] <= t < ly["end"]:
+            return ly["text"]
+    return None
+
+
+def draw_lyric(frame, text, w, h):
+    """Karaoke-style caption: a translucent box + centered white text."""
+    frame = np.array(frame, dtype=np.uint8, copy=True)  # ensure writable
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = h / 500.0 * 1.5
+    thickness = max(1, int(round(scale * 1.4)))
+    max_w = int(w * 0.86)
+    (tw, th), base = cv2.getTextSize(text, font, scale, thickness)
+    if tw > max_w and tw > 0:
+        scale *= max_w / tw
+        thickness = max(1, int(round(scale * 1.4)))
+        (tw, th), base = cv2.getTextSize(text, font, scale, thickness)
+    x = max(0, (w - tw) // 2)
+    y = h - int(h * 0.07)
+    pad = max(6, int(th * 0.45))
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x - pad, y - th - pad), (x + tw + pad, y + base + pad // 2),
+                  (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+    cv2.putText(frame, text, (x, y + 2), font, scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+    cv2.putText(frame, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    return frame
 
 
 def _load_filter(filter_path):
@@ -44,6 +76,8 @@ def main():
     total = max(1, int(duration * fps))
     filters_dir = Path(spec["filters_dir"])
     progress_file = spec.get("progress_file")
+    lyrics = spec.get("lyrics") or []
+    burn_lyrics = spec.get("burn_lyrics", True) and bool(lyrics)
 
     # resolve effect clips → loaded filters with effective params, ordered
     effects = []
@@ -113,8 +147,11 @@ def main():
                     except Exception as ex:
                         sys.stderr.write(f"effect err @{gi}: {ex}\n")
             if frame.shape[0] != h or frame.shape[1] != w:
-                import cv2
                 frame = cv2.resize(frame, (w, h))
+            if burn_lyrics:
+                line = _active_lyric(lyrics, t)
+                if line:
+                    frame = draw_lyric(frame, line, w, h)
             enc.stdin.write(np.ascontiguousarray(frame, dtype=np.uint8).tobytes())
             gi += 1
         comp.release()

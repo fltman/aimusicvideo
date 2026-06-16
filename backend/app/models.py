@@ -89,6 +89,7 @@ class FilterPreviewRequest(BaseModel):
 class ExportRequest(BaseModel):
     resolution: str = "720p"
     fps: int = 30
+    burn_lyrics: bool = True
 
 
 class ChatMessage(BaseModel):

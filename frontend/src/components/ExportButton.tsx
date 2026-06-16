@@ -10,6 +10,7 @@ export default function ExportButton() {
 
   const [open, setOpen] = useState(false);
   const [resolution, setResolution] = useState('720p');
+  const [burnLyrics, setBurnLyrics] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -23,7 +24,11 @@ export default function ExportButton() {
     setDownloadUrl(null);
     setError(null);
     try {
-      const { job_id, export_id } = await api.exportVideo(projectId, resolution);
+      const { job_id, export_id } = await api.exportVideo(
+        projectId,
+        resolution,
+        burnLyrics,
+      );
       timer.current = setInterval(async () => {
         try {
           const [p, job] = await Promise.all([
@@ -89,6 +94,17 @@ export default function ExportButton() {
               </button>
             ))}
           </div>
+
+          <label className="mb-3 flex items-center gap-2 text-xs text-white/70">
+            <input
+              type="checkbox"
+              checked={burnLyrics}
+              onChange={(e) => setBurnLyrics(e.target.checked)}
+              disabled={exporting}
+              className="accent-accent"
+            />
+            Burn lyrics into video
+          </label>
 
           {exporting ? (
             <div>
