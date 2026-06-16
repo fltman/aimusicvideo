@@ -103,7 +103,11 @@ export interface EditorState {
 
   previewAsset: MediaAsset | null; // source-preview: show a library asset directly
   selectedClipId: string | null;
+  selectedClipIds: string[];            // multi-select
   filterWorkspaceClipId: string | null; // effect clip open in the filter workspace
+  rangeIn: number | null;               // loop/export range in
+  rangeOut: number | null;              // loop/export range out
+  loop: boolean;
   playing: boolean;
   currentTime: number;
   duration: number;
@@ -134,8 +138,18 @@ export interface EditorState {
   undo: () => void;
   redo: () => void;
 
+  // range / loop
+  setRangeIn: () => void;
+  setRangeOut: () => void;
+  clearRange: () => void;
+  toggleLoop: () => void;
+
   // timeline editing
   select: (clipId: string | null) => void;
+  toggleSelect: (clipId: string) => void;
+  removeSelected: () => void;
+  addTextClip: (text: string) => void;
+  updateClipText: (clipId: string, patch: Partial<Clip>) => void;
   addTrack: (kind: TrackKind, name?: string) => Track;
   ensureTrack: (kind: TrackKind) => Track;
   removeTrack: (trackId: string) => void;
@@ -233,6 +247,11 @@ export const useEditor = create<EditorState>((set, get) => {
 
   const tick = () => {
     if (!audioEl) return;
+    const { loop, rangeIn, rangeOut } = get();
+    if (loop && rangeIn != null && rangeOut != null &&
+        audioEl.currentTime >= rangeOut) {
+      audioEl.currentTime = rangeIn;
+    }
     set({ currentTime: audioEl.currentTime });
     if (!audioEl.paused) rafId = requestAnimationFrame(tick);
   };
@@ -246,7 +265,11 @@ export const useEditor = create<EditorState>((set, get) => {
     clips: [],
     previewAsset: null,
     selectedClipId: null,
+    selectedClipIds: [],
     filterWorkspaceClipId: null,
+    rangeIn: null,
+    rangeOut: null,
+    loop: false,
     playing: false,
     currentTime: 0,
     duration: 1,
@@ -269,7 +292,10 @@ export const useEditor = create<EditorState>((set, get) => {
         currentTime: 0,
         playing: false,
         selectedClipId: null,
+        selectedClipIds: [],
         filterWorkspaceClipId: null,
+        rangeIn: null,
+        rangeOut: null,
         previewAsset: null,
       });
       const project = await api.getProject(id);
@@ -411,7 +437,73 @@ export const useEditor = create<EditorState>((set, get) => {
 
     // ── editing ────────────────────────────────────────────────────────
     select(clipId) {
-      set({ selectedClipId: clipId });
+      set({ selectedClipId: clipId, selectedClipIds: clipId ? [clipId] : [] });
+    },
+
+    toggleSelect(clipId) {
+      const cur = get().selectedClipIds;
+      const next = cur.includes(clipId)
+        ? cur.filter((id) => id !== clipId)
+        : [...cur, clipId];
+      set({ selectedClipIds: next, selectedClipId: next[next.length - 1] ?? null });
+    },
+
+    removeSelected() {
+      const ids = new Set(get().selectedClipIds);
+      if (get().selectedClipId) ids.add(get().selectedClipId!);
+      if (!ids.size) return;
+      mutate({
+        clips: get().clips.filter((c) => !ids.has(c.id)),
+        selectedClipId: null,
+        selectedClipIds: [],
+      });
+    },
+
+    addTextClip(text) {
+      const track = get().ensureTrack('text');
+      const clip: Clip = {
+        id: uid(),
+        trackId: track.id,
+        assetId: null,
+        name: text,
+        text,
+        textPosition: 'bottom',
+        textColor: '#ffffff',
+        textSize: 1,
+        start: Math.max(0, get().currentTime),
+        duration: 3,
+        inPoint: 0,
+        color: '#3aa0a0',
+      };
+      mutate({ clips: [...get().clips, clip], selectedClipId: clip.id,
+               selectedClipIds: [clip.id] });
+    },
+
+    updateClipText(clipId, patch) {
+      mutate({
+        clips: get().clips.map((c) =>
+          c.id === clipId
+            ? { ...c, ...patch, name: (patch.text ?? c.text ?? c.name) as string }
+            : c,
+        ),
+      });
+    },
+
+    setRangeIn() {
+      const t = get().currentTime;
+      const out = get().rangeOut;
+      set({ rangeIn: t, rangeOut: out != null && out <= t ? null : out });
+    },
+    setRangeOut() {
+      const t = get().currentTime;
+      const inn = get().rangeIn;
+      set({ rangeOut: t, rangeIn: inn != null && inn >= t ? null : inn });
+    },
+    clearRange() {
+      set({ rangeIn: null, rangeOut: null });
+    },
+    toggleLoop() {
+      set({ loop: !get().loop });
     },
 
     addTrack(kind, name) {

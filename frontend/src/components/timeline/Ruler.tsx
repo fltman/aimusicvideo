@@ -29,6 +29,8 @@ function mss(sec: number): string {
 export default function Ruler({ laneWidth, pixelsPerSecond, duration, clientXToTime }: Props) {
   const beats = useEditor((s) => s.analysis?.beats ?? null);
   const seek = useEditor((s) => s.seek);
+  const rangeIn = useEditor((s) => s.rangeIn);
+  const rangeOut = useEditor((s) => s.rangeOut);
 
   const interval = niceInterval(pixelsPerSecond);
   const ticks: number[] = [];
@@ -46,6 +48,14 @@ export default function Ruler({ laneWidth, pixelsPerSecond, duration, clientXToT
       style={{ width: laneWidth, height: RULER_H }}
       onPointerDown={(e) => seek(Math.max(0, clientXToTime(e.clientX)))}
     >
+      {/* loop/export range band */}
+      {rangeIn != null && rangeOut != null && rangeOut > rangeIn && (
+        <div
+          className="pointer-events-none absolute top-0 bottom-0 border-x border-accent bg-accent/20"
+          style={{ left: rangeIn * pixelsPerSecond, width: (rangeOut - rangeIn) * pixelsPerSecond }}
+        />
+      )}
+
       {/* beat markers (drawn under labels) */}
       {beats &&
         bands.map(({ key, color, h }) =>

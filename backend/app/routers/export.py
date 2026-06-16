@@ -19,6 +19,7 @@ def start_export(pid: str, body: ExportRequest) -> dict:
         raise HTTPException(400, "Upload a song first")
     job, export_id = export_service.start_export(
         project, body.resolution, body.fps, body.burn_lyrics,
+        body.range_start, body.range_end,
     )
     return {"job_id": job["id"], "export_id": export_id}
 

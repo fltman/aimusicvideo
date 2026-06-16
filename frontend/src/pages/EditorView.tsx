@@ -135,11 +135,16 @@ export default function EditorView({ projectId }: { projectId: string }) {
         e.preventDefault();
         togglePlay();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        const sel = useEditor.getState().selectedClipId;
-        if (sel) {
+        if (useEditor.getState().selectedClipIds.length) {
           e.preventDefault();
-          useEditor.getState().removeClip(sel);
+          useEditor.getState().removeSelected();
         }
+      } else if (e.key === 'i' || e.key === 'I') {
+        useEditor.getState().setRangeIn();
+      } else if (e.key === 'o' || e.key === 'O') {
+        useEditor.getState().setRangeOut();
+      } else if (e.key === 'l' || e.key === 'L') {
+        useEditor.getState().toggleLoop();
       }
     };
     window.addEventListener('keydown', onKey);

@@ -90,6 +90,8 @@ class ExportRequest(BaseModel):
     resolution: str = "720p"
     fps: int = 30
     burn_lyrics: bool = True
+    range_start: Optional[float] = None
+    range_end: Optional[float] = None
 
 
 class ChatMessage(BaseModel):

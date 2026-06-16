@@ -21,6 +21,7 @@ const KIND_ICON: Record<TrackKind, string> = {
   video: '▣',
   image: '▦',
   effect: '✦',
+  text: 'T',
 };
 
 const ADD_KINDS: TrackKind[] = ['video', 'image', 'audio', 'effect'];
@@ -38,6 +39,7 @@ export default function Timeline({ className }: { className?: string }) {
   const moveTrack = useEditor((s) => s.moveTrack);
   const toggleTrackHidden = useEditor((s) => s.toggleTrackHidden);
   const addEffectClip = useEditor((s) => s.addEffectClip);
+  const addTextClip = useEditor((s) => s.addTextClip);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
   const snapEnabled = useEditor((s) => s.snapEnabled);
@@ -131,6 +133,17 @@ export default function Timeline({ className }: { className?: string }) {
           title="Add a filter effect"
         >
           ✨ Filters
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const t = window.prompt('Overlay text');
+            if (t && t.trim()) addTextClip(t.trim());
+          }}
+          className="rounded border border-edge bg-panel2 px-2 py-1 hover:border-accent hover:text-white"
+          title="Add a text/title overlay at the playhead"
+        >
+          + T text
         </button>
 
         <div className="ml-3 flex items-center gap-1">

@@ -126,6 +126,38 @@ export default function PreviewStage({ className = '' }: { className?: string })
           </div>
         )}
 
+        {/* Text/title overlays (active text clips) */}
+        {!previewAsset &&
+          clips.map((c) => {
+            if (c.text == null) return null;
+            if (!(currentTime >= c.start && currentTime < c.start + c.duration))
+              return null;
+            const pos = c.textPosition ?? 'bottom';
+            const posClass =
+              pos === 'top'
+                ? 'top-[8%] items-start'
+                : pos === 'center'
+                  ? 'inset-y-0 items-center'
+                  : 'bottom-[12%] items-end';
+            return (
+              <div
+                key={c.id}
+                className={`pointer-events-none absolute inset-x-0 flex justify-center px-6 ${posClass}`}
+              >
+                <span
+                  className="text-center font-bold"
+                  style={{
+                    color: c.textColor ?? '#ffffff',
+                    fontSize: `${(c.textSize ?? 1) * 1.8}rem`,
+                    textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                  }}
+                >
+                  {c.text}
+                </span>
+              </div>
+            );
+          })}
+
         {/* Karaoke lyric overlay (timeline mode only) */}
         {!previewAsset && lyricLine && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center px-6 pb-8">

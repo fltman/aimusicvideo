@@ -133,10 +133,21 @@ export const api = {
     ),
 
   // ── export ────────────────────────────────────────────────────────────
-  exportVideo: (pid: string, resolution: string, burnLyrics: boolean) =>
+  exportVideo: (
+    pid: string,
+    resolution: string,
+    burnLyrics: boolean,
+    rangeStart?: number | null,
+    rangeEnd?: number | null,
+  ) =>
     req<{ job_id: string; export_id: string }>(
       `${API}/projects/${pid}/export`,
-      json('POST', { resolution, burn_lyrics: burnLyrics }),
+      json('POST', {
+        resolution,
+        burn_lyrics: burnLyrics,
+        range_start: rangeStart ?? null,
+        range_end: rangeEnd ?? null,
+      }),
     ),
   exportProgress: (pid: string, exportId: string) =>
     req<{ progress: number }>(`${API}/projects/${pid}/export-progress/${exportId}`),

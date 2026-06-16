@@ -36,11 +36,19 @@ def _active_lyric(lyrics, t):
     return None
 
 
-def draw_lyric(frame, text, w, h):
-    """Karaoke-style caption: a translucent box + centered white text."""
-    frame = np.array(frame, dtype=np.uint8, copy=True)  # ensure writable
+def _hex_to_bgr(hexstr):
+    try:
+        s = str(hexstr).lstrip("#")
+        return (int(s[4:6], 16), int(s[2:4], 16), int(s[0:2], 16))
+    except Exception:
+        return (255, 255, 255)
+
+
+def draw_caption(frame, text, w, h, position="bottom", color=(255, 255, 255), size=1.0):
+    """Translucent box + centered text at top/center/bottom (writable copy)."""
+    frame = np.array(frame, dtype=np.uint8, copy=True)
     font = cv2.FONT_HERSHEY_DUPLEX
-    scale = h / 500.0 * 1.5
+    scale = h / 500.0 * 1.5 * size
     thickness = max(1, int(round(scale * 1.4)))
     max_w = int(w * 0.86)
     (tw, th), base = cv2.getTextSize(text, font, scale, thickness)
@@ -49,14 +57,19 @@ def draw_lyric(frame, text, w, h):
         thickness = max(1, int(round(scale * 1.4)))
         (tw, th), base = cv2.getTextSize(text, font, scale, thickness)
     x = max(0, (w - tw) // 2)
-    y = h - int(h * 0.07)
+    if position == "top":
+        y = int(h * 0.10) + th
+    elif position == "center":
+        y = (h + th) // 2
+    else:
+        y = h - int(h * 0.07)
     pad = max(6, int(th * 0.45))
     overlay = frame.copy()
     cv2.rectangle(overlay, (x - pad, y - th - pad), (x + tw + pad, y + base + pad // 2),
                   (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+    cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
     cv2.putText(frame, text, (x, y + 2), font, scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
-    cv2.putText(frame, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    cv2.putText(frame, text, (x, y), font, scale, color, thickness, cv2.LINE_AA)
     return frame
 
 
@@ -121,16 +134,21 @@ def main():
     )
 
     tracks, clips, media = spec.get("tracks", []), spec.get("clips", []), spec.get("media", {})
-    gi = 0
-    win_start = 0.0
-    while win_start < duration - 1e-6:
-        win_dur = min(WINDOW_SEC, duration - win_start)
+    # optional export range (defaults to the whole song)
+    r_start = max(0.0, float(spec.get("range_start", 0.0)))
+    r_end = min(duration, float(spec.get("range_end", duration) or duration))
+    if r_end <= r_start:
+        r_start, r_end = 0.0, duration
+    span = max(1e-3, r_end - r_start)
+
+    win_start = r_start
+    while win_start < r_end - 1e-6:
+        win_dur = min(WINDOW_SEC, r_end - win_start)
         comp = Compositor(tracks, clips, media, w, h, win_start, win_dur, fps)
         nf = max(1, int(round(win_dur * fps)))
         for i in range(nf):
-            if gi >= total:
-                break
             t = win_start + i / fps
+            gi = min(total - 1, int(round(t * fps)))  # global frame for envelopes
             frame = comp.frame_at(i, t)
             ctx = types.SimpleNamespace(
                 t=t, i=gi, fps=fps, w=w, h=h,
@@ -151,14 +169,22 @@ def main():
             if burn_lyrics:
                 line = _active_lyric(lyrics, t)
                 if line:
-                    frame = draw_lyric(frame, line, w, h)
+                    frame = draw_caption(frame, line, w, h)
+            for c in clips:
+                txt = c.get("text")
+                if txt and c["start"] <= t < c["start"] + c["duration"]:
+                    frame = draw_caption(
+                        frame, txt, w, h, c.get("textPosition", "bottom"),
+                        _hex_to_bgr(c.get("textColor", "#ffffff")),
+                        float(c.get("textSize") or 1.0),
+                    )
             enc.stdin.write(np.ascontiguousarray(frame, dtype=np.uint8).tobytes())
-            gi += 1
         comp.release()
         win_start += win_dur
         if progress_file:
             try:
-                Path(progress_file).write_text(json.dumps({"progress": min(1.0, gi / total)}))
+                Path(progress_file).write_text(
+                    json.dumps({"progress": min(1.0, (win_start - r_start) / span)}))
             except OSError:
                 pass
 
@@ -169,8 +195,8 @@ def main():
     song = spec.get("song_wav")
     if song and Path(song).exists():
         subprocess.run(
-            ["ffmpeg", "-y", "-i", raw_out, "-i", song,
-             "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac",
+            ["ffmpeg", "-y", "-i", raw_out, "-ss", str(r_start), "-t", str(span),
+             "-i", song, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac",
              "-shortest", out_path],
             stderr=subprocess.DEVNULL,
         )

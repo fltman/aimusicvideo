@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useEditor } from '../store/editorStore';
 import { api } from '../api/client';
+import { fmtClock } from '../lib/format';
 
 const RESOLUTIONS = ['480p', '720p', '1080p'];
 
@@ -9,8 +10,13 @@ export default function ExportButton() {
   const projectId = useEditor((s) => s.projectId);
 
   const [open, setOpen] = useState(false);
+  const rangeIn = useEditor((s) => s.rangeIn);
+  const rangeOut = useEditor((s) => s.rangeOut);
+  const hasRange = rangeIn != null && rangeOut != null;
+
   const [resolution, setResolution] = useState('720p');
   const [burnLyrics, setBurnLyrics] = useState(true);
+  const [rangeOnly, setRangeOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -24,10 +30,13 @@ export default function ExportButton() {
     setDownloadUrl(null);
     setError(null);
     try {
+      const useRange = hasRange && rangeOnly;
       const { job_id, export_id } = await api.exportVideo(
         projectId,
         resolution,
         burnLyrics,
+        useRange ? rangeIn : null,
+        useRange ? rangeOut : null,
       );
       timer.current = setInterval(async () => {
         try {
@@ -105,6 +114,19 @@ export default function ExportButton() {
             />
             Burn lyrics into video
           </label>
+
+          {hasRange && (
+            <label className="mb-3 flex items-center gap-2 text-xs text-white/70">
+              <input
+                type="checkbox"
+                checked={rangeOnly}
+                onChange={(e) => setRangeOnly(e.target.checked)}
+                disabled={exporting}
+                className="accent-accent"
+              />
+              Export range only ({fmtClock(rangeIn!)}–{fmtClock(rangeOut!)})
+            </label>
+          )}
 
           {exporting ? (
             <div>

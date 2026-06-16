@@ -1,6 +1,6 @@
 // Shared types — mirror backend/app/models.py and db.py schema.
 
-export type TrackKind = 'audio' | 'video' | 'image' | 'effect';
+export type TrackKind = 'audio' | 'video' | 'image' | 'effect' | 'text';
 export type MediaKind = 'image' | 'video' | 'audio';
 export type AnalysisStatus = 'none' | 'processing' | 'done' | 'error';
 
@@ -128,6 +128,10 @@ export interface Clip {
   color?: string;
   filterId?: string;                       // effect clips: the filter plugin
   params?: Record<string, unknown>;        // effect clips: param values
+  text?: string;                           // text clips: the overlay text
+  textPosition?: 'top' | 'center' | 'bottom';
+  textColor?: string;
+  textSize?: number;                       // relative font size (1 = default)
   [k: string]: unknown;
 }
 

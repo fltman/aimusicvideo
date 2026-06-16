@@ -6,13 +6,19 @@ export default function Transport({ className = '' }: { className?: string }) {
   const playing = useEditor((s) => s.playing);
   const currentTime = useEditor((s) => s.currentTime);
   const duration = useEditor((s) => s.duration);
-  const selectedClipId = useEditor((s) => s.selectedClipId);
+  const selectedCount = useEditor((s) => s.selectedClipIds.length);
+  const loop = useEditor((s) => s.loop);
+  const hasRange = useEditor((s) => s.rangeIn != null && s.rangeOut != null);
 
   const togglePlay = useEditor((s) => s.togglePlay);
   const seek = useEditor((s) => s.seek);
   const pause = useEditor((s) => s.pause);
   const splitAtPlayhead = useEditor((s) => s.splitAtPlayhead);
-  const removeClip = useEditor((s) => s.removeClip);
+  const removeSelected = useEditor((s) => s.removeSelected);
+  const setRangeIn = useEditor((s) => s.setRangeIn);
+  const setRangeOut = useEditor((s) => s.setRangeOut);
+  const clearRange = useEditor((s) => s.clearRange);
+  const toggleLoop = useEditor((s) => s.toggleLoop);
 
   const stop = () => {
     pause();
@@ -53,12 +59,37 @@ export default function Transport({ className = '' }: { className?: string }) {
       </button>
       <button
         className={btn}
-        onClick={() => selectedClipId && removeClip(selectedClipId)}
-        disabled={!selectedClipId}
-        title="Delete selected clip (Del)"
+        onClick={removeSelected}
+        disabled={selectedCount === 0}
+        title="Delete selected clip(s) (Del)"
       >
         🗑
       </button>
+
+      <div className="mx-1 h-6 w-px bg-edge" />
+
+      <button className={btn} onClick={setRangeIn} title="Set range in (I)">
+        ⟨
+      </button>
+      <button className={btn} onClick={setRangeOut} title="Set range out (O)">
+        ⟩
+      </button>
+      <button
+        className={`${btn} ${loop ? '!bg-accent/25 !text-accent' : ''}`}
+        onClick={toggleLoop}
+        title="Loop the range (L)"
+      >
+        ⟳
+      </button>
+      {hasRange && (
+        <button
+          className={`${btn} text-xs`}
+          onClick={clearRange}
+          title="Clear range"
+        >
+          ⤫
+        </button>
+      )}
     </div>
   );
 }

@@ -38,7 +38,7 @@ export default function TrackRow({
   const allClips = useEditor((s) => s.clips);
   const clips = allClips.filter((c) => c.trackId === track.id);
   const media = useEditor((s) => s.media);
-  const selectedClipId = useEditor((s) => s.selectedClipId);
+  const selectedIds = useEditor((s) => s.selectedClipIds);
   const addClipFromAsset = useEditor((s) => s.addClipFromAsset);
   const select = useEditor((s) => s.select);
 
@@ -87,7 +87,7 @@ export default function TrackRow({
           pixelsPerSecond={pixelsPerSecond}
           clientXToTime={clientXToTime}
           clientYToTrackId={clientYToTrackId}
-          selected={selectedClipId === clip.id}
+          selected={selectedIds.includes(clip.id)}
         />
       ))}
     </div>

@@ -40,11 +40,14 @@ export default function ClipView({
   const select = useEditor((s) => s.select);
   const splitClipAt = useEditor((s) => s.splitClipAt);
   const openFilterWorkspace = useEditor((s) => s.openFilterWorkspace);
+  const toggleSelect = useEditor((s) => s.toggleSelect);
+  const updateClipText = useEditor((s) => s.updateClipText);
   const currentTime = useEditor((s) => s.currentTime);
   const waveform = useEditor((s) => s.analysis?.waveform ?? null);
   const media = useEditor((s) => s.media);
 
   const isEffect = !!clip.filterId || track.kind === 'effect';
+  const isText = track.kind === 'text' || clip.text != null;
 
   // image/video clips show their thumbnail as a repeating filmstrip background
   const asset = clip.assetId ? media.find((m) => m.id === clip.assetId) : null;
@@ -71,6 +74,10 @@ export default function ClipView({
 
   const begin = (mode: DragMode) => (e: React.PointerEvent) => {
     e.stopPropagation();
+    if (e.shiftKey && mode === 'move') {
+      toggleSelect(clip.id); // shift-click → multi-select, no drag
+      return;
+    }
     // song clip is locked: no move/trim (it's the master timeline anchor)
     if (isSong) {
       select(clip.id);
@@ -122,6 +129,11 @@ export default function ClipView({
 
   const onDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isText) {
+      const t = window.prompt('Overlay text', clip.text ?? '');
+      if (t != null) updateClipText(clip.id, { text: t });
+      return;
+    }
     if (isEffect) {
       openFilterWorkspace(clip.id); // double-click an effect clip → edit the filter
       return;
@@ -141,10 +153,7 @@ export default function ClipView({
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerCancel={onUp}
-      onClick={(e) => {
-        e.stopPropagation();
-        select(clip.id);
-      }}
+      onClick={(e) => e.stopPropagation()}
       onDoubleClick={onDoubleClick}
       className={`absolute top-1 overflow-hidden rounded-md border text-[11px] select-none ${
         selected ? 'border-accent shadow-[0_0_0_1px_rgba(109,109,240,0.6)]' : 'border-edge'
@@ -181,7 +190,7 @@ export default function ClipView({
       )}
 
       <span className="pointer-events-none absolute left-2 top-1 max-w-full truncate pr-2 font-medium text-white/90 drop-shadow">
-        {isEffect ? '✨ ' : ''}{clip.name}
+        {isEffect ? '✨ ' : isText ? 'T ' : ''}{clip.name}
       </span>
 
       {!isSong && (
