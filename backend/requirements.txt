@@ -1,0 +1,7 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+httpx==0.28.1
+# numpy and scipy are reused from system site-packages (venv created with --system-site-packages)
+numpy
+scipy

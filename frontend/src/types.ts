@@ -1,0 +1,147 @@
+// Shared types — mirror backend/app/models.py and db.py schema.
+
+export type TrackKind = 'audio' | 'video' | 'image' | 'effect';
+export type MediaKind = 'image' | 'video' | 'audio';
+export type AnalysisStatus = 'none' | 'processing' | 'done' | 'error';
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  duration_sec: number | null;
+  analysis_status: AnalysisStatus;
+  analysis_progress: number;
+  has_song: number; // sqlite boolean (0/1)
+}
+
+export interface MediaAsset {
+  id: string;
+  project_id: string;
+  kind: MediaKind;
+  original_name: string;
+  path: string;          // relative under data/, load via filesUrl(path)
+  thumb_path: string | null;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  label: string | null;   // user-given name, e.g. "Kevin"
+  tags: string[];         // e.g. ["character"], ["scene"]
+  created_at: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface QueuedRef {
+  id: string;
+  kind: string;
+  label: string;
+}
+
+export interface ChatResponse {
+  reply: string;
+  image_prompt: string | null;
+  queued: QueuedRef[];
+}
+
+export interface AnimateStart {
+  job_id: string;
+  status: string;
+}
+
+export type GenStatus = 'pending' | 'running' | 'done' | 'error';
+
+export interface GenJob {
+  id: string;
+  project_id: string;
+  kind: 'image' | 'video';
+  label: string;
+  status: GenStatus;
+  asset: MediaAsset | null;
+  error: string | null;
+  insert_at: number | null;
+  seq: number;
+}
+
+export interface Beats {
+  bass: number[];
+  mid: number[];
+  high: number[];
+}
+
+export interface Waveform {
+  peaks: [number, number][]; // [min, max] per bucket
+  pps: number;               // buckets per second
+}
+
+export interface LyricLine {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface Mood {
+  mood?: string;
+  genres?: string[];
+  energy?: number;          // 0..1
+  tempo_bpm?: number;
+  palette?: string[];       // hex colors
+  keywords?: string[];
+  visual_suggestions?: string[];
+  [k: string]: unknown;
+}
+
+export interface Analysis {
+  duration: number | null;
+  beats: Beats | null;
+  waveform: Waveform | null;
+  lyrics: LyricLine[] | null;
+  mood: Mood | null;
+}
+
+export interface SongStatus {
+  status: AnalysisStatus;
+  progress: number;
+  stage: string | null;
+  error: string | null;
+}
+
+// ── timeline doc ──────────────────────────────────────────────────────────
+export interface Track {
+  id: string;
+  kind: TrackKind;
+  name: string;
+  hidden?: boolean; // excluded from the preview; lane dimmed
+}
+
+export interface Clip {
+  id: string;
+  trackId: string;
+  assetId: string | null;
+  name: string;
+  start: number;      // timeline position (seconds)
+  duration: number;   // length on the timeline (seconds)
+  inPoint: number;    // offset into source media (seconds)
+  color?: string;
+  [k: string]: unknown;
+}
+
+export interface TimelineDoc {
+  tracks: Track[];
+  clips: Clip[];
+}
+
+export interface ProjectFull extends ProjectSummary {
+  song_original_name: string | null;
+  song_wav_path: string | null;
+  analysis_stage: string | null;
+  analysis_error: string | null;
+  beats_json: Beats | null;
+  waveform_json: Waveform | null;
+  lyrics_json: LyricLine[] | null;
+  mood_json: Mood | null;
+  timeline_json: TimelineDoc | null;
+}

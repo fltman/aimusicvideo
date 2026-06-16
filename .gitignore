@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+backend/venv/
+backend/.env
+
+# Data (uploaded media, generated wavs, sqlite db)
+backend/data/
+!backend/data/.gitkeep
+
+# Node
+node_modules/
+frontend/dist/
+*.log
+
+# OS
+.DS_Store
