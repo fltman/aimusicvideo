@@ -187,8 +187,8 @@ def main():
 
     tracks, clips, media = spec.get("tracks", []), spec.get("clips", []), spec.get("media", {})
     # optional export range (defaults to the whole song)
-    r_start = max(0.0, float(spec.get("range_start", 0.0)))
-    r_end = min(duration, float(spec.get("range_end", duration) or duration))
+    r_start = max(0.0, float(spec.get("range_start") or 0.0))
+    r_end = min(duration, float(spec.get("range_end") or duration))
     if r_end <= r_start:
         r_start, r_end = 0.0, duration
     span = max(1e-3, r_end - r_start)

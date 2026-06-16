@@ -26,6 +26,7 @@ _PROJECT_JSON_COLS = {
     "story_json",
     "script_json",
     "bible_links_json",
+    "chat_json",
 }
 
 _SCHEMA = """
@@ -102,7 +103,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
     if "aspect" not in pcols:
         conn.execute("ALTER TABLE projects ADD COLUMN aspect TEXT DEFAULT '16:9'")
-    for col in ("rhythm_json", "story_json", "script_json", "bible_links_json"):
+    for col in ("rhythm_json", "story_json", "script_json", "bible_links_json",
+                "chat_json"):
         if col not in pcols:
             conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT")
 

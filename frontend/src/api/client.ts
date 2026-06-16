@@ -209,6 +209,10 @@ export const api = {
       `${API}/projects/${id}/chat`,
       json('POST', { messages, cursor_time: cursorTime }),
     ),
+  getChatHistory: (id: string) =>
+    req<{ messages: ChatMessage[] }>(`${API}/projects/${id}/chat`),
+  clearChatHistory: (id: string) =>
+    req<void>(`${API}/projects/${id}/chat`, { method: 'DELETE' }),
 
   // ── timeline ──────────────────────────────────────────────────────────
   getTimeline: (id: string) => req<TimelineDoc>(`${API}/projects/${id}/timeline`),

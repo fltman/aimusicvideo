@@ -28,6 +28,31 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Load the persisted conversation for this project (saved server-side each turn).
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) {
+      setMessages([]);
+      return;
+    }
+    api
+      .getChatHistory(projectId)
+      .then((r) => {
+        if (!cancelled) setMessages(r.messages as Msg[]);
+      })
+      .catch(() => {
+        /* keep whatever is in memory */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const clearChat = async () => {
+    setMessages([]);
+    if (projectId) await api.clearChatHistory(projectId).catch(() => {});
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, sending]);
@@ -98,8 +123,19 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
 
   return (
     <div className={`flex h-full flex-col bg-panel ${className}`}>
-      <div className="border-b border-edge px-3 py-1.5 text-[11px] text-white/40">
-        asking about <CursorBadge />
+      <div className="flex items-center justify-between border-b border-edge px-3 py-1.5 text-[11px] text-white/40">
+        <span>
+          asking about <CursorBadge />
+        </span>
+        {messages.length > 0 && (
+          <button
+            onClick={clearChat}
+            className="rounded px-1.5 py-0.5 text-white/40 hover:bg-panel3 hover:text-white"
+            title="Clear this project's chat history"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
