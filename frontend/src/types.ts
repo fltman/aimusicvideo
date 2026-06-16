@@ -53,11 +53,46 @@ export interface ChatAction {
   name?: string;
 }
 
+/** Full auto-direct result, returned when the chat calls direct_video. */
+export interface DirectResult {
+  shots: number;
+  concept?: string;
+  generate_count?: number;
+  reuse_count?: number;
+  texts?: {
+    text: string;
+    at: number;
+    duration: number;
+    position: 'top' | 'center' | 'bottom';
+  }[];
+  effects?: {
+    filter_id: string;
+    name: string;
+    at: number;
+    duration: number;
+    params?: Record<string, unknown>;
+  }[];
+  interlude_clips?: {
+    filterId: string;
+    name: string;
+    params?: Record<string, unknown>;
+    start: number;
+    duration: number;
+  }[];
+  new_filters?: { fid: string; name: string }[];
+  narrative?: {
+    logline?: string;
+    characters?: { id: string; name: string }[];
+    settings?: { id: string; name: string }[];
+  };
+}
+
 export interface ChatResponse {
   reply: string;
   image_prompt: string | null;
   queued: QueuedRef[];
   actions: ChatAction[];
+  direct?: DirectResult | null;
 }
 
 export interface AnimateStart {

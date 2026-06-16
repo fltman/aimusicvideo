@@ -22,7 +22,9 @@ from .. import config, db
 from . import chat as chat_service
 from . import genqueue, imagegen, narrative
 
-MAX_SHOTS_CAP = 16
+# The director chooses the shot count from the song; this is only a hard ceiling
+# so an auto-decided count can never run the generation cost away.
+MAX_SHOTS_CAP = 36
 _POLL = 1.5            # seconds between canon-availability polls
 _ANCHOR_TIMEOUT = 150  # max seconds a dependent shot waits for its anchor
 _BIBLE_LOCK = threading.Lock()
@@ -120,12 +122,17 @@ def _make_runner(pid: str, plan_shot: dict, story: dict) -> Callable[[], dict]:
 
 # ── main entry ────────────────────────────────────────────────────────────────
 
-def auto_direct(project: dict, max_shots: int = 10) -> dict[str, Any]:
-    """Plan and enqueue a story-driven draft. Returns immediately with the plan."""
-    max_shots = max(1, min(MAX_SHOTS_CAP, int(max_shots)))
+def auto_direct(project: dict, max_shots: Optional[int] = None) -> dict[str, Any]:
+    """Plan and enqueue a story-driven draft. Returns immediately with the plan.
+
+    The shot count is decided by the song's structure (section count + energy-driven
+    pacing). ``max_shots`` is an optional explicit override; when omitted the director
+    chooses, bounded only by ``MAX_SHOTS_CAP`` so cost can't run away.
+    """
     pid = project["id"]
 
     # ── plan (synchronous, ~2-4 fast LLM calls; every stage has a fallback) ──
+    # max_shots=None → segment_shots decides the count from the song structure.
     rhythm = narrative.analyze_rhythm(project)
     db.update_project_fields(pid, rhythm_json=rhythm)
     story = narrative.analyze_story(project, rhythm)

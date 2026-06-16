@@ -8,7 +8,6 @@ import PreviewStage from '../components/PreviewStage';
 import RightPanel from '../components/RightPanel';
 import ChatDock from '../components/ChatDock';
 import GenerationQueue from '../components/GenerationQueue';
-import AutoDirectButton from '../components/AutoDirectButton';
 import ExportButton from '../components/ExportButton';
 import ResizeHandle from '../components/ResizeHandle';
 import FilterWorkspace from '../components/FilterWorkspace';
@@ -220,7 +219,6 @@ export default function EditorView({ projectId }: { projectId: string }) {
         )}
         <div className="ml-auto flex items-center gap-3">
           <GenerationQueue jobs={genJobs} />
-          <AutoDirectButton />
           <ExportButton />
           <Transport />
         </div>

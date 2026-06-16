@@ -99,6 +99,32 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "direct_video",
+            "description": (
+                "Direct a COMPLETE story-driven draft of the WHOLE song: read the "
+                "lyrics as a story, board it into beat-timed shots with recurring "
+                "characters/settings, reuse fitting library images, generate the "
+                "rest (kept visually consistent), add a title card and lay "
+                "beat-synced effects. Call this when the user asks to auto-direct, "
+                "storyboard the song, or make/direct a draft or the whole video. "
+                "YOU decide how many shots the song needs — only set 'shots' if the "
+                "user explicitly asked for a specific number."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "shots": {
+                        "type": "integer",
+                        "description": "Optional explicit shot count; omit to let "
+                                       "the director choose from the song structure.",
+                    },
+                },
+            },
+        },
+    },
 ]
 
 
@@ -205,8 +231,11 @@ def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
         "TOOLS: call generate_image for a section image (vivid 16:9 prompt; include "
         "reference names like \"Kevin in the bathroom\" when they exist). Call "
         "add_text to put a title/caption on the timeline. Call apply_effect to add "
-        "a beat-synced filter over a time range. Use the current playhead time as "
-        "the default 'at'. Otherwise talk normally and help with creative "
+        "a beat-synced filter over a time range. Call direct_video to auto-direct a "
+        "COMPLETE draft of the whole song (storyboard + generate/reuse images + "
+        "title + effects) when the user asks to direct/storyboard/make the whole "
+        "video or a draft — you choose the shot count. Use the current playhead time "
+        "as the default 'at'. Otherwise talk normally and help with creative "
         "direction. Keep replies concise."
     )
 
@@ -335,10 +364,11 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
     queued: list[dict] = []
     actions: list[dict] = []      # timeline edits for the frontend to apply
     image_prompt: str | None = None
+    direct: dict | None = None    # full auto-direct result for the frontend to apply
 
     if not tool_calls:
         return {"reply": first.get("content") or "", "image_prompt": None,
-                "queued": [], "actions": []}
+                "queued": [], "actions": [], "direct": None}
 
     # Execute tool calls: images enqueue on the generation queue; add_text /
     # apply_effect become actions the frontend applies. Then ask for a reply.
@@ -389,6 +419,25 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
             actions.append({"type": "apply_effect", "filter_id": fid,
                             "name": fname, "at": at, "duration": dur})
             result = f"Applied {fname} from {_fmt_clock(at)} for {dur:.0f}s."
+        elif name == "direct_video":
+            from . import director  # lazy: director imports chat (avoid cycle)
+            try:
+                shots = int(args["shots"]) if args.get("shots") is not None else None
+            except (TypeError, ValueError):
+                shots = None
+            direct = director.auto_direct(project, max_shots=shots)
+            for s in direct.get("plan", []):
+                queued.append({"id": s["job_id"], "kind": "image",
+                               "label": f"shot {s['idx'] + 1}"})
+            bits = [f"directed {direct['generate_count']} new shot(s)"]
+            if direct.get("reuse_count"):
+                bits.append(f"reused {direct['reuse_count']}")
+            if direct.get("new_filters"):
+                bits.append(f"authored {len(direct['new_filters'])} custom filter")
+            cast = ", ".join(c["name"] for c in direct.get("narrative", {}).get("characters", []))
+            result = (f"Boarded the whole song — {', '.join(bits)}. "
+                      f"Concept: {direct.get('concept', '')[:120]}"
+                      + (f". Cast: {cast}" if cast else ""))
         else:
             result = "skipped"
         api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),
@@ -400,4 +449,4 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
     except Exception:
         reply = "Done."
     return {"reply": reply, "image_prompt": image_prompt, "queued": queued,
-            "actions": actions}
+            "actions": actions, "direct": direct}

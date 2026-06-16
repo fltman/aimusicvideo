@@ -53,13 +53,33 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
           addEffectClip(a.filter_id, a.name ?? a.filter_id, a.at, a.duration);
         }
       }
+      // a full auto-direct: lay the title card, effects and graphic interludes
+      // now; the shot images auto-place via the generation queue as they finish.
+      let edits = (res.actions ?? []).length;
+      if (res.direct) {
+        for (const t of res.direct.texts ?? []) {
+          addTextClip(t.text, t.at, t.duration, t.position);
+        }
+        for (const e of res.direct.effects ?? []) {
+          addEffectClip(e.filter_id, e.name, e.at, e.duration, e.params, false);
+        }
+        for (const c of res.direct.interlude_clips ?? []) {
+          addEffectClip(c.filterId, c.name, c.start, c.duration, c.params, false);
+        }
+        useEditor.getState().closeFilterWorkspace();
+        useEditor.getState().openTextEditor(null);
+        edits +=
+          (res.direct.texts?.length ?? 0) +
+          (res.direct.effects?.length ?? 0) +
+          (res.direct.interlude_clips?.length ?? 0);
+      }
       setMessages((m) => [
         ...m,
         {
           role: 'assistant',
           content: res.reply,
           queued: res.queued.length,
-          edits: (res.actions ?? []).length,
+          edits,
         },
       ]);
     } catch (e) {
@@ -84,8 +104,10 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {messages.length === 0 && (
           <div className="pt-4 text-center text-xs leading-relaxed text-white/30">
-            Place the playhead, then ask for a visual for that moment.
-            <br />I use the mood, the section lyrics and the actual sound.
+            Ask me to <span className="text-white/50">direct the whole video</span> —
+            I read the song as a story and board it.
+            <br />
+            Or place the playhead and ask for a visual for that moment.
             <br />
             <span className="text-white/20">
               Tip: name &amp; tag media (e.g. “Kevin”, “bathroom”) then say
@@ -129,13 +151,23 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
       </div>
 
       <div className="border-t border-edge p-2">
-        <button
-          onClick={() => send('Generate a suitable image for this moment.')}
-          disabled={sending}
-          className="mb-2 w-full rounded-md bg-panel3 py-1.5 text-xs text-white/80 hover:bg-edge hover:text-white disabled:opacity-40"
-        >
-          ✨ Image for this moment
-        </button>
+        <div className="mb-2 flex gap-1.5">
+          <button
+            onClick={() => send('Direct the whole video — storyboard the song into a complete draft.')}
+            disabled={sending}
+            className="flex-1 rounded-md bg-gradient-to-r from-accent to-high py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-40"
+          >
+            🎬 Direct the whole video
+          </button>
+          <button
+            onClick={() => send('Generate a suitable image for this moment.')}
+            disabled={sending}
+            className="rounded-md bg-panel3 px-2.5 py-1.5 text-xs text-white/80 hover:bg-edge hover:text-white disabled:opacity-40"
+            title="Image for the current playhead moment"
+          >
+            ✨ Shot
+          </button>
+        </div>
         <div className="flex gap-1.5">
           <input
             value={input}

@@ -95,7 +95,7 @@ class FilterPreviewRequest(BaseModel):
 
 
 class AutoDirectRequest(BaseModel):
-    max_shots: int = 10
+    max_shots: Optional[int] = None  # None → the director decides from the song
 
 
 class ExportRequest(BaseModel):

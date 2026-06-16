@@ -363,8 +363,26 @@ def _story_fallback(project: dict, rhythm: dict) -> dict:
 
 # ── Stage 2: SCRIPT (deterministic slots + LLM meaning) ────────────────────────
 
-def segment_shots(project: dict, rhythm: dict, story: dict, max_shots: int) -> dict:
-    slots = _build_slots(project, rhythm, max_shots)
+SHOT_CEILING = 36  # hard safety ceiling on an auto-decided shot count
+
+
+def _suggest_count(rhythm: dict) -> int:
+    """How many shots the song wants: a duration × energy-scaled shots/minute."""
+    dur = rhythm.get("duration") or 0.0
+    secs = rhythm.get("sections") or []
+    if dur <= 0 or not secs:
+        return 4
+    span = sum(s["end"] - s["start"] for s in secs) or dur
+    mean_e = sum((s["end"] - s["start"]) * s["energy"] for s in secs) / span
+    spm = 6.0 + 5.0 * mean_e            # ~6 (calm) … ~11 (energetic) shots / minute
+    return int(max(4, min(SHOT_CEILING, round(dur / 60.0 * spm))))
+
+
+def segment_shots(project: dict, rhythm: dict, story: dict,
+                  max_shots: Optional[int] = None) -> dict:
+    target = (_suggest_count(rhythm) if max_shots is None
+              else max(3, min(SHOT_CEILING, int(max_shots))))
+    slots = _build_slots(project, rhythm, target)
     lyrics = sorted(project.get("lyrics_json") or [], key=lambda x: x["start"])
     for s in slots:
         s["lyric"] = " ".join(
@@ -377,30 +395,31 @@ def segment_shots(project: dict, rhythm: dict, story: dict, max_shots: int) -> d
             "shots": assigned["shots"]}
 
 
-def _build_slots(project: dict, rhythm: dict, max_shots: int) -> list[dict]:
-    """Cut each section into beat-aligned shot slots whose pacing follows energy."""
+def _build_slots(project: dict, rhythm: dict, target: int) -> list[dict]:
+    """Cut the song into ``target`` beat-aligned shots, distributed across sections
+    by length × energy (so a long high-energy section earns more cuts, but no single
+    section runs away)."""
     bass = sorted((project.get("beats_json") or {}).get("bass") or [])
     bars = rhythm.get("bar_starts") or []
     sections = rhythm["sections"]
     dur = rhythm["duration"]
 
-    plans = []  # (section, n_shots)
-    for s in sections:
-        span = max(0.5, s["end"] - s["start"])
-        base = _clamp(6.0 - 4.5 * s["energy"], 1.2, 6.0)
-        base -= 0.05 * (s["wps"] - 3.0)             # dense delivery → faster cuts
-        base = _clamp(base, 1.0, 7.0)
-        n = max(1, int(math.ceil(span / base)))
-        plans.append([s, n])
-
-    # respect the shot budget: trim the busiest sections first
+    # weight = span × (0.5 + energy); allocate the target proportionally, ≥1 each
+    weights = [max(0.1, (s["end"] - s["start"]) * (0.5 + s["energy"])) for s in sections]
+    wsum = sum(weights) or 1.0
+    plans = [[s, max(1, int(round(target * w / wsum)))]
+             for s, w in zip(sections, weights)]
+    # reconcile rounding to exactly hit the target
     total = sum(p[1] for p in plans)
-    while total > max_shots:
-        plans.sort(key=lambda p: p[1], reverse=True)
-        if plans[0][1] <= 1:
+    while total > target:                       # trim the section with the most shots
+        cut = max((p for p in plans if p[1] > 1), key=lambda p: p[1], default=None)
+        if not cut:
             break
-        plans[0][1] -= 1
+        cut[1] -= 1
         total -= 1
+    while total < target:                       # grow the heaviest section
+        plans[max(range(len(plans)), key=lambda i: weights[i] / plans[i][1])][1] += 1
+        total += 1
     plans.sort(key=lambda p: p[0]["idx"])
 
     slots: list[dict] = []
@@ -439,7 +458,7 @@ def _build_slots(project: dict, rhythm: dict, max_shots: int) -> list[dict]:
         sl["idx"] = i
         nxt = out[i + 1]["start"] if i + 1 < len(out) else dur
         sl["duration"] = round(max(0.8, nxt - sl["start"]), 2)
-    return out[:max_shots]
+    return out[:target]
 
 
 def _assign_meaning(project: dict, rhythm: dict, story: dict, slots: list[dict]) -> dict:
