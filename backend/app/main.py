@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import config, db
-from .routers import chat, media, projects, queue, song, timeline
+from .routers import chat, filters, media, projects, queue, song, timeline
+from .services import filters as filters_service
 
 # Ensure storage dirs exist before mounting StaticFiles at import time.
 config.ensure_dirs()
@@ -26,6 +27,7 @@ app.add_middleware(
 def _startup() -> None:
     config.ensure_dirs()
     db.init_db()
+    filters_service.seed_builtins()
 
 
 app.include_router(projects.router)
@@ -34,6 +36,7 @@ app.include_router(song.router)
 app.include_router(timeline.router)
 app.include_router(chat.router)
 app.include_router(queue.router)
+app.include_router(filters.router)
 
 app.mount("/files", StaticFiles(directory=config.DATA_DIR), name="files")
 

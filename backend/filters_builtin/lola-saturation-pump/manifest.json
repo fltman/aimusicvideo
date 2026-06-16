@@ -1,0 +1,8 @@
+{
+  "id": "lola-saturation-pump",
+  "name": "Lola Saturation Pump",
+  "description": "Mid-driven saturation pump — boosts HSV saturation on each hit for a punchy color pop. Ported from Lola's mid-saturation layer.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["color", "saturation", "mid", "lola"]
+}

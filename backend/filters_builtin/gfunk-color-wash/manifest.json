@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-color-wash",
+  "name": "G-Funk Color Wash",
+  "description": "Cyclic purple haze → gold shine → emerald green overlay that keeps drifting through the palette over time. Beat-synced, defaults to the mid band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "color", "wash", "mid"]
+}

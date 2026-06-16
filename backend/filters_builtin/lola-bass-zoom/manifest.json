@@ -1,0 +1,8 @@
+{
+  "id": "lola-bass-zoom",
+  "name": "Lola Bass Zoom",
+  "description": "Beat-synced punch-zoom — each hit crops toward center and resizes back to full frame for a snappy push-in. Ported from Lola's bass-zoom layer.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["zoom", "punch", "bass", "lola"]
+}

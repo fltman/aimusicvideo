@@ -5,3 +5,4 @@ httpx==0.28.1
 # numpy and scipy are reused from system site-packages (venv created with --system-site-packages)
 numpy
 scipy
+opencv-python-headless==4.13.0.92

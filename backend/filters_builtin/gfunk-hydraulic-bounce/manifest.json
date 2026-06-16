@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-hydraulic-bounce",
+  "name": "G-Funk Hydraulic Bounce",
+  "description": "Lowrider hydraulics — vertical frame bounce (upward pop) plus a slight zoom-in on the hit. Beat-synced, defaults to the bass band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "bounce", "bass", "lowrider"]
+}

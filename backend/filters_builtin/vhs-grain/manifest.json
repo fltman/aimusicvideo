@@ -1,0 +1,8 @@
+{
+  "id": "vhs-grain",
+  "name": "VHS Grain",
+  "description": "Always-on analog luma noise — the general fuzz of an old tape, with an optional extra kick on louder moments via RMS.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "grain", "noise", "constant"]
+}

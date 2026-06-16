@@ -1,0 +1,9 @@
+{
+  "id": "_template",
+  "name": "Empty Filter",
+  "description": "A blank pass-through filter. Start here to build a new effect from scratch — edit the code or use the chat.",
+  "version": 1,
+  "builtin": true,
+  "template": true,
+  "tags": ["template"]
+}

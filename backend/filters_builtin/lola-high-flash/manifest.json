@@ -1,0 +1,8 @@
+{
+  "id": "lola-high-flash",
+  "name": "Lola High Flash",
+  "description": "High-driven hit flash — white tint, color invert, or edge-darkening vignette pulse on each transient. Ported from Lola's high-frequency effect layer.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["flash", "tint", "invert", "vignette", "high", "lola"]
+}

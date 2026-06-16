@@ -1,0 +1,8 @@
+{
+  "id": "vhs-wobble",
+  "name": "VHS Wobble",
+  "description": "Loudness-driven gentle horizontal wobble — a few random rows shift slightly, scaled by overall RMS loudness rather than a beat band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "wobble", "rms", "constant"]
+}

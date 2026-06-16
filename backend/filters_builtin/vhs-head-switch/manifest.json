@@ -1,0 +1,8 @@
+{
+  "id": "vhs-head-switch",
+  "name": "VHS Head Switch",
+  "description": "The classic VHS head-switching bar at the bottom of the frame — a displaced, noisy strip that fires only on strong beats. Defaults to the high band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "glitch", "head-switch", "high"]
+}

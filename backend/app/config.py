@@ -32,6 +32,10 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", BACKEND_DIR / "data")).resolve()
 PROJECTS_DIR = DATA_DIR / "projects"
 DB_PATH = DATA_DIR / "app.db"
 
+# Filter plugins: shipped templates seeded into the live (editable) library.
+FILTERS_DIR = DATA_DIR / "filters"
+BUILTIN_FILTERS_DIR = BACKEND_DIR / "filters_builtin"
+
 # ── external tooling ─────────────────────────────────────────────────────────
 WHISPER_CLI = os.environ.get(
     "WHISPER_CLI", "/Users/andersbj/Projekt/whisper.cpp/build/bin/whisper-cli"
@@ -47,6 +51,7 @@ FFPROBE = os.environ.get("FFPROBE", "ffprobe")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MOOD_MODEL = "google/gemini-3.5-flash"
+FILTER_CHAT_MODEL = "anthropic/claude-opus-4.8"  # vibe-coding the filters
 
 # ── server ────────────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("PORT", "8100"))
@@ -62,6 +67,7 @@ WAVEFORM_PPS = 100  # waveform peak buckets per second
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    FILTERS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def project_dir(project_id: str) -> Path:

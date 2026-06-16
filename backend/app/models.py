@@ -55,6 +55,33 @@ class AnimateRequest(BaseModel):
     duration: int = 5
 
 
+class FilterCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class FilterFork(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class FilterSave(BaseModel):
+    code: str
+    message: str = "Manual edit"
+
+
+class FilterRollback(BaseModel):
+    version: int
+
+
+class FilterChatRequest(BaseModel):
+    message: str
+
+
+class FilterPreviewRequest(BaseModel):
+    filter_id: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    cursor_time: float = 0.0
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str

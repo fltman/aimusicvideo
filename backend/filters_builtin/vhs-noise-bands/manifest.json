@@ -1,0 +1,8 @@
+{
+  "id": "vhs-noise-bands",
+  "name": "VHS Noise Bands",
+  "description": "Beat-driven horizontal bands of static noise — head-clog dropout streaks blended over the frame. Defaults to the high band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "glitch", "noise", "dropout", "high"]
+}

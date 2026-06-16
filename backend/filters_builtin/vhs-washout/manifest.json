@@ -1,0 +1,8 @@
+{
+  "id": "vhs-washout",
+  "name": "VHS Washout",
+  "description": "Always-on aged-tape color washout — desaturates and slightly lifts the blacks for a faded analog look.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "color", "washout", "desaturate", "constant"]
+}

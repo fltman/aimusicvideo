@@ -1,0 +1,8 @@
+{
+  "id": "vhs-tracking-glitch",
+  "name": "VHS Tracking Glitch",
+  "description": "Bass-driven horizontal band displacement — the classic badly-tuned-VHS bad-tracking look, with vertical roll on heavy hits.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "glitch", "bass"]
+}

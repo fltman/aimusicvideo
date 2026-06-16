@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-sunset-grade",
+  "name": "G-Funk Sunset Grade",
+  "description": "Warm West Coast sunset color grade — lifts orange/amber highlights, cools shadows, with a gentle contrast S-curve. Always on, controlled by a warmth slider.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "grade", "warm", "color", "always-on"]
+}

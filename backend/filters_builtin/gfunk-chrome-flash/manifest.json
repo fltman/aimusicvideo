@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-chrome-flash",
+  "name": "G-Funk Chrome Flash",
+  "description": "Sun hitting chrome bumpers and spinning rims — a hot center bloom plus a horizontal anamorphic streak. Beat-synced, defaults to the high band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "chrome", "bloom", "flash", "high"]
+}

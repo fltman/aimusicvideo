@@ -1,0 +1,8 @@
+{
+  "id": "vhs-chroma-bleed",
+  "name": "VHS Chroma Bleed",
+  "description": "Beat-driven chromatic aberration — horizontally offsets the red and blue channels for that bleeding-color analog look. Defaults to the mid band.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "glitch", "chroma", "color", "mid"]
+}

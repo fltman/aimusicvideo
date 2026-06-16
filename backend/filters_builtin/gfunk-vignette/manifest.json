@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-vignette",
+  "name": "G-Funk Vignette",
+  "description": "Soft oval vignette — darkened edges keeping the center lit, the classic music-video look. Always on, controlled by a strength slider.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "vignette", "always-on"]
+}

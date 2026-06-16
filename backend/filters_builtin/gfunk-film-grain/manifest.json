@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-film-grain",
+  "name": "G-Funk Film Grain",
+  "description": "Warm 35mm film grain — coarser and more organic than VHS noise. Always on; the grain amount is modulated slightly by overall loudness.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "grain", "film", "always-on"]
+}

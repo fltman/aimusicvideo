@@ -1,0 +1,8 @@
+{
+  "id": "vhs-scanlines",
+  "name": "VHS Scanlines",
+  "description": "Always-on faint CRT/VHS scanline overlay — every other row is darkened to mimic interlaced scan lines.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["vhs", "crt", "scanlines", "constant"]
+}

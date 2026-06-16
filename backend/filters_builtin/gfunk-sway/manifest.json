@@ -1,0 +1,8 @@
+{
+  "id": "gfunk-sway",
+  "name": "G-Funk Sway",
+  "description": "Gentle side-to-side sinusoidal sway — the camera on a lowrider drifting left and right with the groove. Always on; sway depth scales with loudness, phase advances over time.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["gfunk", "sway", "motion", "always-on"]
+}
