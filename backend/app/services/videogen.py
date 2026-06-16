@@ -62,7 +62,9 @@ def image_to_video(
     headers = {"Authorization": auth, "Content-Type": "application/json",
                "X-Title": "AI Music Video Studio"}
     data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode()
-    duration = 10 if int(duration) >= 8 else 5  # kling supports 5s / 10s
+    # kling supports 5s / 10s — pick the shortest that still covers the request so a
+    # 6–10s shot is fully animated (no frozen tail)
+    duration = 10 if float(duration) > 5 else 5
 
     submit = httpx.post(
         f"{config.OPENROUTER_BASE_URL}/videos",

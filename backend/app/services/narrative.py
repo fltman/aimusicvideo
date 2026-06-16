@@ -381,7 +381,10 @@ def _story_fallback(project: dict, rhythm: dict) -> dict:
 
 # ── Stage 2: SCRIPT (deterministic slots + LLM meaning) ────────────────────────
 
-SHOT_CEILING = 36  # hard safety ceiling on an auto-decided shot count
+SHOT_CEILING = 36   # hard safety ceiling on an auto-decided shot count
+MAX_SHOT_SEC = 10.0  # no shot longer than the video model can animate (and a held
+                     # 20s shot is too long for a music video anyway)
+_SPLIT_PIECE = 9.5   # split long shots into pieces this size (leaves beat-snap margin)
 
 
 def _suggest_count(rhythm: dict) -> int:
@@ -486,11 +489,34 @@ def _build_slots(project: dict, rhythm: dict, target: int) -> list[dict]:
             continue
         seen.add(sl["start"])
         out.append(sl)
+    out = out[:target]
+
+    # Cap every shot at MAX_SHOT_SEC: split any slot that would run longer into
+    # equal, beat-snapped pieces. Guarantees no shot exceeds what the video model
+    # can animate (and keeps the cutting music-video-tight).
+    pieced: list[dict] = []
+    for i, sl in enumerate(out):
+        nxt = out[i + 1]["start"] if i + 1 < len(out) else dur
+        span_d = max(0.8, nxt - sl["start"])
+        k = max(1, math.ceil(span_d / _SPLIT_PIECE)) if span_d > MAX_SHOT_SEC else 1
+        for j in range(k):
+            st = sl["start"] + span_d * j / k
+            if j > 0:                                  # snap the internal cuts
+                st = _snap(st, bars, 0.2)
+                st = _snap(st, bass, 0.18)
+            pieced.append({**sl, "start": round(max(0.0, st), 2)})
+
+    seen, out = set(), []
+    for sl in sorted(pieced, key=lambda x: x["start"]):
+        if sl["start"] in seen:
+            continue
+        seen.add(sl["start"])
+        out.append(sl)
     for i, sl in enumerate(out):
         sl["idx"] = i
         nxt = out[i + 1]["start"] if i + 1 < len(out) else dur
         sl["duration"] = round(max(0.8, nxt - sl["start"]), 2)
-    return out[:target]
+    return out
 
 
 def _assign_meaning(project: dict, rhythm: dict, story: dict, slots: list[dict],
