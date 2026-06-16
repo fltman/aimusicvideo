@@ -1,185 +1,207 @@
-"""AI auto-director: turn a song into a draft music video.
+"""AI auto-director: turn a song into a STORY-DRIVEN draft music video.
 
-Builds a shot list from the lyrics (or even segments if instrumental), asks the
-director model for one cinematic image prompt per shot (a single cheap LLM
-call), then enqueues capped image generations that auto-place onto the timeline
-at each shot's time + duration (via genqueue insert_at / insert_duration).
+This orchestrates the narrative pipeline (see ``narrative.py``): read the song as
+a story, board it into beat-timed shots with recurring characters/settings, reuse
+existing library assets where they fit, generate only the new images the story
+needs (each consistent with its character's canon reference), and lay beat-synced
+effects — authoring a bespoke filter for a graphic interlude when nothing fits.
+
+Continuity without blocking the request: generation runs in two waves on the
+shared queue. Wave-0 "establishing" shots define each entity's canon image and
+record it in ``bible_links_json``; wave-1 shots reference that canon. Dependent
+runners wait for their entity's canon to land (with a timeout) inside the worker
+thread, so ``auto_direct`` returns as soon as the plan is built.
 """
 from __future__ import annotations
 
-import json
-import math
-from typing import Any
+import threading
+import time
+from typing import Any, Callable, Optional
 
-import httpx
-
-from .. import config
+from .. import config, db
 from . import chat as chat_service
-from . import genqueue, imagegen
+from . import genqueue, imagegen, narrative
 
 MAX_SHOTS_CAP = 16
+_POLL = 1.5            # seconds between canon-availability polls
+_ANCHOR_TIMEOUT = 150  # max seconds a dependent shot waits for its anchor
+_BIBLE_LOCK = threading.Lock()
 
 
-def _build_shots(project: dict, max_shots: int) -> list[dict]:
-    duration = float(project.get("duration_sec") or 0.0)
-    lyrics = project.get("lyrics_json") or []
-    shots: list[dict] = []
+# ── bible / reference helpers ─────────────────────────────────────────────────
 
-    if lyrics:
-        lines = sorted(lyrics, key=lambda x: x["start"])
-        if len(lines) > max_shots:
-            per = math.ceil(len(lines) / max_shots)
-            groups = [lines[i:i + per] for i in range(0, len(lines), per)]
-        else:
-            groups = [[ln] for ln in lines]
-        points = []
-        if lines[0]["start"] > 3.0:
-            points.append({"start": 0.0, "lyric": ""})  # instrumental intro
-        for g in groups:
-            points.append({"start": g[0]["start"],
-                           "lyric": " ".join(x["text"] for x in g)})
-        for i, p in enumerate(points):
-            end = points[i + 1]["start"] if i + 1 < len(points) else duration
-            shots.append({"start": round(p["start"], 2),
-                          "duration": round(max(1.0, end - p["start"]), 2),
-                          "lyric": p["lyric"]})
-    else:
-        n = max(1, min(max_shots, int(duration / 6) or 1))
-        seg = duration / n if n else duration
-        for i in range(n):
-            shots.append({"start": round(i * seg, 2),
-                          "duration": round(seg, 2), "lyric": ""})
-
-    return shots[:max_shots]
-
-
-def _mood_brief(project: dict) -> str:
-    m = project.get("mood_json") or {}
-    parts = []
-    for k in ("mood", "genres", "energy", "tempo_bpm", "palette", "keywords"):
-        v = m.get(k)
-        if v:
-            parts.append(f"{k}: {', '.join(map(str, v)) if isinstance(v, list) else v}")
-    return " | ".join(parts) or "(no mood analysis)"
-
-
-_MOTIONS = ["zoom-in", "zoom-out", "pan-left", "pan-right", "pan-up", "pan-down"]
-
-
-def _plan_shots(project: dict, shots: list[dict]) -> tuple[str, list[dict]]:
-    """One LLM call → (concept, [{prompt, motion}]) — a cohesive cinematic plan."""
-    shot_lines = "\n".join(
-        f"{i}. [{s['start']:.0f}s, {s['duration']:.0f}s] {s['lyric'] or '(instrumental)'}"
-        for i, s in enumerate(shots)
-    )
-    system = (
-        "You are the director of a music video. Design a COHESIVE cinematic "
-        "sequence from the song's mood and the numbered shot list. Pick a single "
-        "visual world (location, palette, lighting, recurring subject/motif) and "
-        "keep every shot in it, while VARYING the framing (wide establishing, "
-        "medium, intimate close-up, evocative detail, abstract texture) so it "
-        "feels edited, not a slideshow. Return STRICT JSON: "
-        '{"concept":"<1 sentence: world + palette + motif>","shots":[{"prompt":'
-        '"<vivid, concrete 16:9 cinematic image prompt, in the concept, no text/'
-        'captions>","motion":"<zoom-in|zoom-out|pan-left|pan-right|pan-up|'
-        'pan-down>"}]} — exactly one shots entry per input shot, in order.'
-    )
-    user = f"SONG MOOD: {_mood_brief(project)}\n\nSHOTS:\n{shot_lines}"
-    fallback = (
-        (project.get("mood_json") or {}).get("mood", "moody cinematic"),
-        [{"prompt": f"Cinematic 16:9 shot, {(project.get('mood_json') or {}).get('mood','moody')}"
-                    + (f": {s['lyric']}" if s["lyric"] else ""),
-          "motion": _MOTIONS[i % len(_MOTIONS)]}
-         for i, s in enumerate(shots)],
-    )
-    if not config.OPENROUTER_API_KEY:
-        return fallback
+def _asset_bytes(asset: Optional[dict]) -> Optional[bytes]:
+    if not asset:
+        return None
     try:
-        resp = httpx.post(
-            f"{config.OPENROUTER_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
-                     "Content-Type": "application/json",
-                     "X-Title": "AI Music Video Studio"},
-            json={"model": config.MOOD_MODEL,
-                  "messages": [{"role": "system", "content": system},
-                               {"role": "user", "content": user}],
-                  "response_format": {"type": "json_object"}},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        content = (resp.json()["choices"][0]["message"].get("content") or "").strip()
-        data = json.loads(content[content.index("{"):content.rindex("}") + 1])
-        designed = data.get("shots") or []
-        out = []
-        for i in range(len(shots)):
-            d = designed[i] if i < len(designed) and isinstance(designed[i], dict) else {}
-            out.append({"prompt": str(d.get("prompt") or fallback[1][i]["prompt"]),
-                        "motion": d.get("motion") if d.get("motion") in _MOTIONS
-                        else _MOTIONS[i % len(_MOTIONS)]})
-        return str(data.get("concept") or fallback[0]), out
-    except Exception:
-        return fallback
+        return (config.DATA_DIR / asset["path"]).read_bytes()
+    except (OSError, KeyError, TypeError):
+        return None
 
 
-def _snap_to_beat(t: float, bass: list[float]) -> float:
-    if not bass:
-        return t
-    nearest = min(bass, key=lambda b: abs(b - t))
-    return round(nearest, 2) if abs(nearest - t) < 0.4 else t
+def _write_bible(pid: str, entity: str, asset_id: str) -> None:
+    """Record an entity's canon image id (read-modify-write under a lock)."""
+    with _BIBLE_LOCK:
+        proj = db.get_project(pid) or {}
+        links = dict(proj.get("bible_links_json") or {})
+        links[entity] = asset_id
+        db.update_project_fields(pid, bible_links_json=links)
 
 
-def _refs(pid: str) -> list[bytes]:
-    out = []
-    for a in chat_service._reference_assets(pid)[:2]:
-        try:
-            out.append((config.DATA_DIR / a["path"]).read_bytes())
-        except OSError:
-            pass
+def _seed_ref(pid: str, entity: str) -> Optional[bytes]:
+    """A pre-existing canon for an entity (prior run / hand-tagged), or None."""
+    links = (db.get_project(pid) or {}).get("bible_links_json") or {}
+    aid = links.get(entity)
+    if aid and aid != "__pending__":
+        return _asset_bytes(db.get_media(aid))
+    for a in db.list_media(pid):
+        if a.get("kind") == "image" and a.get("bible_entity") == entity:
+            return _asset_bytes(a)
+    return None
+
+
+def _wait_for_canon(pid: str, entities: list[str], timeout: float) -> list[bytes]:
+    """Block until each entity has a canon image, returning up to 2 ref blobs."""
+    deadline = time.time() + timeout
+    out: list[bytes] = []
+    for ent in entities[:2]:
+        aid = None
+        while time.time() < deadline:
+            links = (db.get_project(pid) or {}).get("bible_links_json") or {}
+            aid = links.get(ent)
+            if aid and aid != "__pending__":
+                break
+            time.sleep(_POLL)
+        b = _asset_bytes(db.get_media(aid)) if aid and aid != "__pending__" else None
+        if b:
+            out.append(b)
     return out
 
 
-def _beat_effects(project: dict, shots: list[dict]) -> list[dict]:
-    """A cohesive look + a bass-driven punch on the densest section."""
-    dur = float(project.get("duration_sec") or 0.0)
-    bass = (project.get("beats_json") or {}).get("bass") or []
-    fx = [{"filter_id": "gfunk-vignette", "name": "Vignette", "at": 0.0,
-           "duration": round(dur, 2)}]
-    if bass and dur > 10 and shots:
-        best = max(shots, key=lambda s: sum(
-            1 for b in bass if s["start"] <= b < s["start"] + min(8.0, s["duration"])))
-        fx.append({"filter_id": "lola-bass-zoom", "name": "Bass Zoom",
-                   "at": best["start"], "duration": min(8.0, best["duration"])})
-    return fx
+def _entity_meta(story: dict, entity: Optional[str]) -> tuple[Optional[str], Optional[list[str]]]:
+    if not entity:
+        return None, None
+    for c in story.get("characters") or []:
+        if c["id"] == entity:
+            return c.get("name"), [entity, "character"]
+    for s in story.get("settings") or []:
+        if s["id"] == entity:
+            return s.get("name"), [entity, "scene"]
+    return None, [entity]
 
+
+def _make_runner(pid: str, plan_shot: dict, story: dict) -> Callable[[], dict]:
+    """Build the genqueue runner closure for one shot (reuse or generate)."""
+    if plan_shot["decision"] == "reuse":
+        aid = plan_shot["reuse_asset_id"]
+        return lambda: db.get_media(aid)
+
+    prompt = plan_shot["prompt"]
+    anchor_for = plan_shot.get("anchor_for_entity")
+    depends = plan_shot.get("depends_on") or []
+    entity = anchor_for or (depends[0] if depends else None)
+    label, tags = _entity_meta(story, entity)
+
+    def runner() -> dict:
+        if anchor_for:
+            seed = _seed_ref(pid, anchor_for)        # keep identity across runs
+            refs = [seed] if seed else []
+        else:
+            refs = _wait_for_canon(pid, depends, _ANCHOR_TIMEOUT)
+        png = imagegen.generate_image(prompt, refs or None)
+        asset = chat_service._save_image_asset(
+            pid, png, prompt, label=label, tags=tags, bible_entity=entity)
+        if anchor_for:
+            _write_bible(pid, anchor_for, asset["id"])
+        return asset
+
+    return runner
+
+
+# ── main entry ────────────────────────────────────────────────────────────────
 
 def auto_direct(project: dict, max_shots: int = 10) -> dict[str, Any]:
-    """Plan a cohesive draft: moving shots + title + beat-synced effects."""
+    """Plan and enqueue a story-driven draft. Returns immediately with the plan."""
     max_shots = max(1, min(MAX_SHOTS_CAP, int(max_shots)))
     pid = project["id"]
-    shots = _build_shots(project, max_shots)
-    bass = (project.get("beats_json") or {}).get("bass") or []
-    for s in shots:
-        s["start"] = _snap_to_beat(s["start"], bass)
 
-    concept, designed = _plan_shots(project, shots)
-    refs = _refs(pid) or None
+    # ── plan (synchronous, ~2-4 fast LLM calls; every stage has a fallback) ──
+    rhythm = narrative.analyze_rhythm(project)
+    db.update_project_fields(pid, rhythm_json=rhythm)
+    story = narrative.analyze_story(project, rhythm)
+    db.update_project_fields(pid, story_json=story)
+    script = narrative.segment_shots(project, rhythm, story, max_shots)
+    db.update_project_fields(pid, script_json=script)
 
-    plan = []
-    for i, shot in enumerate(shots):
-        prompt, motion = designed[i]["prompt"], designed[i]["motion"]
+    inventory = narrative.build_inventory(pid)
+    bible = project.get("bible_links_json") or {}
+    bplan = narrative.broker(project, story, script, inventory, bible)
+    fx = narrative.plan_effects(project, rhythm, script, story)
 
-        def runner(p=prompt, r=refs):
-            png = imagegen.generate_image(p, r)
-            return chat_service._save_image_asset(pid, png, p)
+    # ── enqueue authoring of any bespoke interlude filter (async) ──
+    for nf in fx.get("new_filters", []):
+        _enqueue_filter_authoring(pid, nf["fid"], nf["brief"], nf["name"])
 
-        job = genqueue.submit(pid, "image", f"shot {i + 1}/{len(shots)}", runner,
-                              insert_at=shot["start"],
-                              insert_duration=shot["duration"],
-                              insert_meta={"motion": motion})
-        plan.append({**shot, "prompt": prompt, "motion": motion, "job_id": job["id"]})
+    # ── enqueue generation in waves (wave 0 first → establishes canon) ──
+    shots_by_idx = {s["idx"]: s for s in bplan["shots"]}
+    plan: list[dict] = []
+    for wave in bplan["generation_waves"]:
+        for idx in wave["shot_idxs"]:
+            ps = shots_by_idx[idx]
+            meta = {"motion": ps["motion"], "beat": ps.get("beat"),
+                    "bible_entity": ps.get("anchor_for_entity") or
+                    (ps.get("depends_on") or [None])[0],
+                    "intent": ps.get("intent")}
+            label = f"shot {idx + 1}" + (" (reuse)" if ps["decision"] == "reuse" else "")
+            job = genqueue.submit(
+                pid, "image", label, _make_runner(pid, ps, story),
+                insert_at=ps["start"], insert_duration=ps["duration"], insert_meta=meta)
+            plan.append({
+                "idx": idx, "start": ps["start"], "duration": ps["duration"],
+                "lyric": ps.get("lyric", ""), "prompt": ps["prompt"],
+                "motion": ps["motion"], "job_id": job["id"],
+                "decision": ps["decision"], "reuse_asset_id": ps.get("reuse_asset_id"),
+                "bible_entity": meta["bible_entity"], "beat": ps.get("beat"),
+                "intent": ps.get("intent"), "shot_size": ps.get("shot_size"),
+            })
+    plan.sort(key=lambda p: p["start"])
 
     dur = float(project.get("duration_sec") or 4.0)
-    texts = [{"text": (project.get("name") or "Untitled").upper(), "at": 0.0,
-              "duration": min(4.0, dur), "position": "center", "anim": "fade"}]
-    return {"shots": len(plan), "concept": concept, "plan": plan,
-            "texts": texts, "effects": _beat_effects(project, shots)}
+    title = (story.get("logline") and _title_from(project, story)) or \
+        (project.get("name") or "Untitled").upper()
+    texts = [{"text": title, "at": 0.0, "duration": min(4.0, dur),
+              "position": "center", "anim": "fade"}]
+
+    return {
+        "shots": len(plan), "concept": script.get("concept") or story.get("logline", ""),
+        "plan": plan, "texts": texts,
+        "effects": fx["effects"], "interlude_clips": fx["interlude_clips"],
+        "new_filters": fx["new_filters"],
+        "generate_count": bplan["generate_count"], "reuse_count": bplan["reuse_count"],
+        "narrative": {"logline": story.get("logline"), "theme": story.get("theme"),
+                      "characters": story.get("characters", []),
+                      "settings": story.get("settings", []),
+                      "sections": rhythm["sections"]},
+    }
+
+
+def _title_from(project: dict, story: dict) -> str:
+    """A short title card: the song name (or the protagonist's name)."""
+    name = (project.get("name") or "").strip()
+    if name and name.lower() not in ("untitled", "new project"):
+        return name.upper()
+    chars = story.get("characters") or []
+    if chars and chars[0].get("name"):
+        return chars[0]["name"].upper()
+    return (name or "Untitled").upper()
+
+
+def _enqueue_filter_authoring(pid: str, fid: str, brief: str, name: str) -> None:
+    """Background job: vibe-code the freshly-created blank filter via opus."""
+    def runner() -> dict:
+        from . import filterchat  # lazy: avoid import cost at module load
+        res = filterchat.chat(fid, brief)
+        return {"kind": "filter_authored", "fid": fid,
+                "version": res.get("version"), "error": res.get("error")}
+
+    genqueue.submit(pid, "filter", f"author · {name}", runner)

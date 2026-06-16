@@ -263,7 +263,9 @@ def _post(messages: list[dict], tools: list[dict] | None) -> dict:
     return resp.json()["choices"][0]["message"]
 
 
-def _save_image_asset(pid: str, png: bytes, prompt: str) -> dict:
+def _save_image_asset(pid: str, png: bytes, prompt: str,
+                      label: str | None = None, tags: list[str] | None = None,
+                      bible_entity: str | None = None) -> dict:
     media_dir = config.project_dir(pid) / "media"
     thumbs_dir = media_dir / "thumbs"
     media_dir.mkdir(parents=True, exist_ok=True)
@@ -280,7 +282,7 @@ def _save_image_asset(pid: str, png: bytes, prompt: str) -> dict:
     if audio.make_thumbnail(str(asset_path), str(thumb_abs), "image"):
         thumb_rel = config.rel_to_data(thumb_abs)
 
-    name = " ".join(prompt.split()[:6]).strip()[:60] or "generated image"
+    name = label or " ".join(prompt.split()[:6]).strip()[:60] or "generated image"
     return db.add_media(
         project_id=pid,
         kind="image",
@@ -290,6 +292,10 @@ def _save_image_asset(pid: str, png: bytes, prompt: str) -> dict:
         duration_sec=None,
         width=info.get("width"),
         height=info.get("height"),
+        label=label,
+        tags=tags,
+        gen_prompt=prompt,
+        bible_entity=bible_entity,
     )
 
 

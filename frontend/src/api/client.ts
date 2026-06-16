@@ -108,7 +108,29 @@ export const api = {
       concept?: string;
       plan: unknown[];
       texts?: { text: string; at: number; duration: number; position: 'top' | 'center' | 'bottom' }[];
-      effects?: { filter_id: string; name: string; at: number; duration: number }[];
+      effects?: {
+        filter_id: string;
+        name: string;
+        at: number;
+        duration: number;
+        params?: Record<string, unknown>;
+      }[];
+      interlude_clips?: {
+        filterId: string;
+        name: string;
+        params?: Record<string, unknown>;
+        start: number;
+        duration: number;
+      }[];
+      new_filters?: { fid: string; name: string }[];
+      generate_count?: number;
+      reuse_count?: number;
+      narrative?: {
+        logline?: string;
+        theme?: string;
+        characters?: { id: string; name: string }[];
+        settings?: { id: string; name: string }[];
+      };
     }>(`${API}/projects/${id}/auto-direct`, json('POST', { max_shots: maxShots })),
 
   varyImage: (id: string, assetId: string) =>

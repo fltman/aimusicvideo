@@ -12,7 +12,13 @@ export default function AutoDirectButton() {
   const [open, setOpen] = useState(false);
   const [maxShots, setMaxShots] = useState(10);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<number | null>(null);
+  const [result, setResult] = useState<{
+    concept?: string;
+    generate: number;
+    reuse: number;
+    filters: number;
+    characters: string[];
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const ready = analysisStatus === 'done';
@@ -23,18 +29,29 @@ export default function AutoDirectButton() {
     setError(null);
     try {
       const res = await api.autoDirect(projectId, maxShots);
-      // apply the title card + beat-synced effects now; shot images auto-place
-      // as the generation queue completes.
+      // Apply the title card, beat-synced effects and graphic interludes now;
+      // the shot images (and any reused library assets) auto-place onto the
+      // timeline as the generation queue completes. focus=false so the many
+      // effect adds don't flash the filter workspace open.
       for (const t of res.texts ?? []) {
         addTextClip(t.text, t.at, t.duration, t.position);
       }
       for (const e of res.effects ?? []) {
-        addEffectClip(e.filter_id, e.name, e.at, e.duration);
+        addEffectClip(e.filter_id, e.name, e.at, e.duration, e.params, false);
       }
-      // adding clips auto-opens their editors — close them after auto-direct
+      for (const c of res.interlude_clips ?? []) {
+        addEffectClip(c.filterId, c.name, c.start, c.duration, c.params, false);
+      }
+      // adding clips can open their editors — close them after auto-direct
       useEditor.getState().closeFilterWorkspace();
       useEditor.getState().openTextEditor(null);
-      setDone(res.shots);
+      setResult({
+        concept: res.concept,
+        generate: res.generate_count ?? res.shots,
+        reuse: res.reuse_count ?? 0,
+        filters: res.new_filters?.length ?? 0,
+        characters: (res.narrative?.characters ?? []).map((c) => c.name),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -59,11 +76,13 @@ export default function AutoDirectButton() {
             Auto-direct a draft
           </div>
           <p className="mb-3 text-[11px] leading-relaxed text-white/50">
-            Generates one shot image per section (from the mood + lyrics) and
-            drops them onto the timeline, beat-aligned. Refine afterwards.
+            Reads the song as a <span className="text-white/70">story</span>, boards
+            it into beat-timed shots with recurring characters, reuses matching
+            library images, generates the rest (kept consistent), and lays
+            beat-synced effects. A fully editable draft.
           </p>
           <div className="mb-1 flex items-center justify-between text-xs text-white/60">
-            <span>Shots</span>
+            <span>Max shots</span>
             <span className="tabular-nums text-white">{maxShots}</span>
           </div>
           <input
@@ -76,20 +95,40 @@ export default function AutoDirectButton() {
             className="mb-2 w-full accent-accent"
           />
           <p className="mb-3 text-[10px] text-white/35">
-            Queues {maxShots} image generations (≈ ${(maxShots * 0.04).toFixed(2)}).
-            Watch the generation queue.
+            Up to {maxShots} shots; only new ones are generated. Planning takes a
+            few seconds, then images land via the queue.
           </p>
-          {done != null ? (
-            <p className="rounded bg-high/15 py-2 text-center text-sm text-high">
-              ✓ Queued {done} shots — they'll land on the timeline.
-            </p>
+          {result ? (
+            <div className="rounded bg-high/10 p-2 text-[11px] text-high/90">
+              {result.concept && (
+                <p className="mb-1.5 italic leading-snug text-high/80">
+                  “{result.concept}”
+                </p>
+              )}
+              <p>
+                ✓ {result.generate} shot{result.generate === 1 ? '' : 's'} generating
+                {result.reuse > 0 && `, ${result.reuse} reused`}
+                {result.filters > 0 && `, ${result.filters} custom filter authored`}.
+              </p>
+              {result.characters.length > 0 && (
+                <p className="mt-1 text-high/60">
+                  Cast: {result.characters.join(', ')}
+                </p>
+              )}
+              <button
+                onClick={() => setResult(null)}
+                className="mt-2 w-full rounded bg-accent/80 py-1 text-xs font-medium text-white hover:bg-accent"
+              >
+                Direct again
+              </button>
+            </div>
           ) : (
             <button
               onClick={run}
               disabled={busy}
               className="w-full rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent/80 disabled:opacity-50"
             >
-              {busy ? 'Planning…' : 'Generate draft'}
+              {busy ? 'Writing the story…' : 'Generate draft'}
             </button>
           )}
           {error && <p className="mt-2 text-[11px] text-bass">{error}</p>}

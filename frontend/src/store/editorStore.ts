@@ -167,7 +167,14 @@ export interface EditorState {
   removeClip: (clipId: string) => void;
 
   // effect clips + filter workspace
-  addEffectClip: (filterId: string, name: string, start?: number, duration?: number) => void;
+  addEffectClip: (
+    filterId: string,
+    name: string,
+    start?: number,
+    duration?: number,
+    params?: Record<string, unknown>,
+    focus?: boolean,
+  ) => void;
   updateClipParams: (clipId: string, params: Record<string, unknown>) => void;
   setClipFilter: (clipId: string, filterId: string, name: string) => void;
   openFilterWorkspace: (clipId: string) => void;
@@ -703,22 +710,24 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     // ── effect clips + filter workspace ─────────────────────────────────
-    addEffectClip(filterId, name, start, duration) {
+    addEffectClip(filterId, name, start, duration, params, focus = true) {
       const track = get().ensureTrack('effect');
       const clip: Clip = {
         id: uid(),
         trackId: track.id,
         assetId: null,
         filterId,
-        params: {},
+        params: params ?? {},
         name,
         start: Math.max(0, start ?? get().currentTime),
         duration: duration ?? 4,
         inPoint: 0,
         color: '#9b6df0',
       };
-      mutate({ clips: [...get().clips, clip], selectedClipId: clip.id });
-      set({ filterWorkspaceClipId: clip.id });
+      // `focus` opens the filter workspace for manual adds; auto-direct adds many
+      // clips at once and passes focus=false so it doesn't flash the editor open.
+      mutate({ clips: [...get().clips, clip], ...(focus ? { selectedClipId: clip.id } : {}) });
+      if (focus) set({ filterWorkspaceClipId: clip.id });
     },
 
     updateClipParams(clipId, params) {

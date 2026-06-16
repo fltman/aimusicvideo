@@ -216,6 +216,31 @@ def create_from_template(name: str) -> dict:
     return fork("_template", name)  # type: ignore[return-value]
 
 
+def create_blank(name: str) -> dict:
+    """Create a new filter from the SHIPPED passthrough template.
+
+    Unlike :func:`create_from_template` (which forks the live ``_template`` and can
+    inherit a customised copy), this always seeds from the pristine builtin so
+    auto-authored filters start as a true no-op — a safe base to vibe-code onto.
+    """
+    src = config.BUILTIN_FILTERS_DIR / "_template"
+    if not (src / "filter.py").exists():
+        return create_from_template(name)  # fall back to the live template
+    fid = _new_id(name)
+    dst = _filter_dir(fid)
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src / "filter.py", dst / "filter.py")
+    (dst / "versions").mkdir(exist_ok=True)
+    shutil.copy(src / "filter.py", dst / "versions" / "0001.py")
+    (dst / "versions" / "0001.json").write_text(json.dumps(
+        {"version": 1, "message": "Blank filter", "ts": _now()}))
+    (dst / "chat.json").write_text("[]")
+    m = _read_manifest("_template") or {}
+    m.update(id=fid, name=name, version=1, builtin=False, template=False)
+    (dst / "manifest.json").write_text(json.dumps(m, indent=2))
+    return get_filter(fid)  # type: ignore[return-value]
+
+
 def rename_filter(fid: str, name: str) -> Optional[dict]:
     """Rename a (non-built-in) filter in place."""
     m = _read_manifest(fid)

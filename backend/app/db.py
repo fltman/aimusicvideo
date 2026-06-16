@@ -22,6 +22,10 @@ _PROJECT_JSON_COLS = {
     "lyrics_json",
     "mood_json",
     "timeline_json",
+    "rhythm_json",
+    "story_json",
+    "script_json",
+    "bible_links_json",
 }
 
 _SCHEMA = """
@@ -92,12 +96,15 @@ def init_db() -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after the initial schema to existing dbs."""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(media_assets)")}
-    for col in ("label", "tags"):
+    for col in ("label", "tags", "gen_prompt", "bible_entity"):
         if col not in cols:
             conn.execute(f"ALTER TABLE media_assets ADD COLUMN {col} TEXT")
     pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
     if "aspect" not in pcols:
         conn.execute("ALTER TABLE projects ADD COLUMN aspect TEXT DEFAULT '16:9'")
+    for col in ("rhythm_json", "story_json", "script_json", "bible_links_json"):
+        if col not in pcols:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT")
 
 
 def _row_to_project(row: sqlite3.Row) -> dict[str, Any]:
@@ -218,6 +225,8 @@ def add_media(
     height: Optional[int] = None,
     label: Optional[str] = None,
     tags: Optional[list[str]] = None,
+    gen_prompt: Optional[str] = None,
+    bible_entity: Optional[str] = None,
 ) -> dict[str, Any]:
     aid = _new_id()
     now = _now()
@@ -225,11 +234,12 @@ def add_media(
         conn.execute(
             """INSERT INTO media_assets
                  (id, project_id, kind, original_name, path, thumb_path,
-                  duration_sec, width, height, label, tags, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  duration_sec, width, height, label, tags, gen_prompt,
+                  bible_entity, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (aid, project_id, kind, original_name, path, thumb_path,
              duration_sec, width, height, label,
-             json.dumps(tags) if tags else None, now),
+             json.dumps(tags) if tags else None, gen_prompt, bible_entity, now),
         )
     return get_media(aid)  # type: ignore[return-value]
 
