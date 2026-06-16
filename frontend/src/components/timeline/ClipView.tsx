@@ -45,7 +45,7 @@ export default function ClipView({
   const currentTime = useEditor((s) => s.currentTime);
   const waveform = useEditor((s) => s.analysis?.waveform ?? null);
   const media = useEditor((s) => s.media);
-  const convertClipToVideo = useEditor((s) => s.convertClipToVideo);
+  const openConvertPrompt = useEditor((s) => s.openConvertPrompt);
   const convertingAssets = useEditor((s) => s.convertingAssets);
 
   const isEffect = !!clip.filterId || track.kind === 'effect';
@@ -202,7 +202,7 @@ export default function ClipView({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
-            if (!converting) convertClipToVideo(clip.id);
+            if (!converting) openConvertPrompt(clip.id);
           }}
           disabled={converting}
           title={converting ? 'Generating video…' : 'Turn this image into video'}

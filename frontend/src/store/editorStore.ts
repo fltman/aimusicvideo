@@ -105,6 +105,7 @@ export interface EditorState {
 
   previewAsset: MediaAsset | null; // source-preview: show a library asset directly
   convertingAssets: string[];      // image asset ids currently being turned into video
+  convertPromptClipId: string | null; // image clip awaiting a motion prompt to animate
   selectedClipId: string | null;
   selectedClipIds: string[];            // multi-select
   filterWorkspaceClipId: string | null; // effect clip open in the filter workspace
@@ -171,7 +172,8 @@ export interface EditorState {
   // turn an image clip into a video: animate the still, then mount the resulting
   // video clip on a video track at the same position(s) (every occurrence of that
   // image), trimmed to match each slot exactly.
-  convertClipToVideo: (clipId: string) => Promise<void>;
+  openConvertPrompt: (clipId: string | null) => void;
+  convertClipToVideo: (clipId: string, prompt?: string) => Promise<void>;
   placeConvertedVideo: (jobId: string, videoAsset: MediaAsset) => void;
 
   // effect clips + filter workspace
@@ -283,6 +285,7 @@ export const useEditor = create<EditorState>((set, get) => {
     clips: [],
     previewAsset: null,
     convertingAssets: [],
+    convertPromptClipId: null,
     selectedClipId: null,
     selectedClipIds: [],
     filterWorkspaceClipId: null,
@@ -390,6 +393,7 @@ export const useEditor = create<EditorState>((set, get) => {
       set({
         projectId: null, project: null, media: [], analysis: null,
         tracks: [], clips: [], previewAsset: null, convertingAssets: [],
+        convertPromptClipId: null,
         selectedClipId: null,
         filterWorkspaceClipId: null,
         playing: false, currentTime: 0, duration: 1,
@@ -720,12 +724,17 @@ export const useEditor = create<EditorState>((set, get) => {
       });
     },
 
-    async convertClipToVideo(clipId) {
+    openConvertPrompt(clipId) {
+      set({ convertPromptClipId: clipId });
+    },
+
+    async convertClipToVideo(clipId, prompt) {
       const { projectId, clips, media } = get();
       const clip = clips.find((c) => c.id === clipId);
       if (!projectId || !clip || !clip.assetId) return;
       const asset = media.find((m) => m.id === clip.assetId);
       if (!asset || asset.kind !== 'image') return;
+      set({ convertPromptClipId: null });
       if (get().convertingAssets.includes(asset.id)) return; // already in flight
       set({ convertingAssets: [...get().convertingAssets, asset.id] });
       try {
@@ -735,6 +744,7 @@ export const useEditor = create<EditorState>((set, get) => {
           .filter((c) => c.assetId === asset.id)
           .reduce((m, c) => Math.max(m, c.duration), clip.duration);
         const { job_id } = await api.animateImage(projectId, asset.id, {
+          prompt: (prompt ?? '').trim(),
           duration: Math.max(1, Math.ceil(longest)),
         });
         pendingConverts.set(job_id, asset.id);

@@ -12,6 +12,7 @@ import ExportButton from '../components/ExportButton';
 import ResizeHandle from '../components/ResizeHandle';
 import FilterWorkspace from '../components/FilterWorkspace';
 import TextClipEditor from '../components/TextClipEditor';
+import ConvertVideoDialog from '../components/ConvertVideoDialog';
 import Timeline from '../components/timeline/Timeline';
 
 const clamp = (v: number, min: number, max: number) =>
@@ -332,6 +333,9 @@ export default function EditorView({ projectId }: { projectId: string }) {
 
           {/* Styled text-overlay editor (self-gates on textEditorClipId) */}
           <TextClipEditor />
+
+          {/* Image→video motion-prompt dialog (self-gates on convertPromptClipId) */}
+          <ConvertVideoDialog />
         </>
       )}
     </div>
