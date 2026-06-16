@@ -9,7 +9,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-TrackKind = Literal["audio", "video", "image", "effect"]
+TrackKind = Literal["audio", "video", "image", "effect", "text"]
 
 
 class ProjectCreate(BaseModel):
