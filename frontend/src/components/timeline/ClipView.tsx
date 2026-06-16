@@ -22,9 +22,13 @@ interface Props {
   /** Maps a clientY to the trackId currently under the pointer (or null). */
   clientYToTrackId: (clientY: number) => string | null;
   selected: boolean;
+  /** How many earlier clips on this lane this one overlaps — staggers it down so
+   *  the covered clip stays visible. */
+  overlapDepth?: number;
 }
 
 const HANDLE_W = 8;
+const STAGGER = 9; // px each overlapping clip is nudged down
 
 export default function ClipView({
   clip,
@@ -34,6 +38,7 @@ export default function ClipView({
   clientXToTime,
   clientYToTrackId,
   selected,
+  overlapDepth = 0,
 }: Props) {
   const moveClip = useEditor((s) => s.moveClip);
   const trimClip = useEditor((s) => s.trimClip);
@@ -75,6 +80,11 @@ export default function ClipView({
 
   const left = clip.start * pixelsPerSecond;
   const width = Math.max(2, clip.duration * pixelsPerSecond);
+
+  // overlapping clips cascade downward so a covered clip's top edge stays visible
+  const depth = Math.min(Math.max(0, overlapDepth), 4);
+  const topPx = 4 + depth * STAGGER;
+  const heightPx = Math.max(18, TRACK_H - 8 - depth * STAGGER);
 
   const begin = (mode: DragMode) => (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -158,14 +168,20 @@ export default function ClipView({
       onPointerCancel={onUp}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={onDoubleClick}
-      className={`absolute top-1 overflow-hidden rounded-md border text-[11px] select-none ${
+      className={`absolute overflow-hidden rounded-md border text-[11px] select-none ${
         selected ? 'border-accent shadow-[0_0_0_1px_rgba(109,109,240,0.6)]' : 'border-edge'
-      } ${isSong ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+      } ${depth > 0 ? 'ring-1 ring-black/40' : ''} ${
+        isSong ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+      }`}
       style={{
         left,
         width,
-        height: TRACK_H - 8,
+        top: topPx,
+        height: heightPx,
         background: bg,
+        // deeper (more offset) clips sit on top, so their offset reveals the top
+        // edge of the clips beneath; the selected clip always comes to the front
+        zIndex: selected ? 100 : depth,
       }}
     >
       {isAudio && waveform && (
@@ -174,7 +190,7 @@ export default function ClipView({
           inPoint={clip.inPoint}
           duration={clip.duration}
           width={width}
-          height={TRACK_H - 8}
+          height={heightPx}
         />
       )}
 

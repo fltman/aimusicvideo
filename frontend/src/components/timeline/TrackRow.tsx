@@ -37,6 +37,27 @@ export default function TrackRow({
   // that returns a fresh array each call breaks useSyncExternalStore (infinite loop).
   const allClips = useEditor((s) => s.clips);
   const clips = allClips.filter((c) => c.trackId === track.id);
+
+  // Assign each clip a vertical "level" via greedy interval colouring so that any
+  // two clips overlapping in time always get different levels (and thus a visible
+  // vertical stagger) — not just adjacent pairs.
+  const overlapLevels: Record<string, number> = {};
+  {
+    const sorted = [...clips].sort(
+      (a, b) => a.start - b.start || b.duration - a.duration,
+    );
+    const active: { end: number; lvl: number }[] = [];
+    for (const c of sorted) {
+      for (let k = active.length - 1; k >= 0; k--) {
+        if (active[k].end <= c.start) active.splice(k, 1);
+      }
+      const used = new Set(active.map((a) => a.lvl));
+      let lvl = 0;
+      while (used.has(lvl)) lvl++;
+      overlapLevels[c.id] = lvl;
+      active.push({ end: c.start + c.duration, lvl });
+    }
+  }
   const media = useEditor((s) => s.media);
   const selectedIds = useEditor((s) => s.selectedClipIds);
   const addClipFromAsset = useEditor((s) => s.addClipFromAsset);
@@ -88,6 +109,7 @@ export default function TrackRow({
           clientXToTime={clientXToTime}
           clientYToTrackId={clientYToTrackId}
           selected={selectedIds.includes(clip.id)}
+          overlapDepth={overlapLevels[clip.id] ?? 0}
         />
       ))}
     </div>
