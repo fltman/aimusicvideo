@@ -33,8 +33,17 @@ export default function ProjectsView() {
     }
   }, []);
 
+  // Refetch on mount, on a light poll (so previews update as background
+  // generations land), and whenever the tab regains focus.
   useEffect(() => {
     refresh();
+    const id = setInterval(refresh, 5000);
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [refresh]);
 
   const open = (id: string) => {
