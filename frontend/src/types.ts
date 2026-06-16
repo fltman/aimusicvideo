@@ -13,6 +13,8 @@ export interface ProjectSummary {
   analysis_status: AnalysisStatus;
   analysis_progress: number;
   has_song: number; // sqlite boolean (0/1)
+  thumb?: string | null;     // preview: latest image/video thumb (rel path)
+  palette?: string[] | null; // mood palette fallback
 }
 
 export interface MediaAsset {

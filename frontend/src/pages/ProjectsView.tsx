@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, filesUrl } from '../api/client';
 import type { ProjectSummary, AnalysisStatus } from '../types';
 import { fmtClock } from '../lib/format';
 
@@ -125,10 +125,26 @@ export default function ProjectsView() {
                 onClick={() => open(p.id)}
                 className="group relative cursor-pointer rounded-xl border border-edge bg-panel2 p-4 transition-colors hover:border-accent/60 hover:bg-panel3"
               >
-                <div className="mb-3 flex aspect-video items-center justify-center rounded-lg bg-gradient-to-br from-panel3 to-panel">
-                  <div className="h-9 w-9 rounded-full bg-accent/20 ring-1 ring-accent/40 flex items-center justify-center text-accent">
-                    ▶
-                  </div>
+                <div className="mb-3 aspect-video overflow-hidden rounded-lg bg-gradient-to-br from-panel3 to-panel">
+                  {p.thumb ? (
+                    <img
+                      src={filesUrl(p.thumb)}
+                      alt=""
+                      className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
+                    />
+                  ) : p.palette && p.palette.length > 0 ? (
+                    <div className="flex h-full w-full">
+                      {p.palette.slice(0, 5).map((c, i) => (
+                        <div key={i} className="flex-1" style={{ background: c }} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-accent ring-1 ring-accent/40">
+                        ♪
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="truncate font-medium">{p.name}</h3>

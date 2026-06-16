@@ -127,11 +127,31 @@ def list_projects() -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT id, name, created_at, updated_at, duration_sec,
-                      analysis_status, analysis_progress,
+                      analysis_status, analysis_progress, mood_json,
                       (song_wav_path IS NOT NULL) AS has_song
                FROM projects ORDER BY updated_at DESC"""
         ).fetchall()
-    return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            raw = d.pop("mood_json", None)
+            try:
+                mood = json.loads(raw) if raw else None
+            except (ValueError, TypeError):
+                mood = None
+            d["palette"] = mood.get("palette") if isinstance(mood, dict) else None
+            thumb = conn.execute(
+                """SELECT thumb_path, path, kind FROM media_assets
+                   WHERE project_id = ? AND kind IN ('image', 'video')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (d["id"],),
+            ).fetchone()
+            d["thumb"] = (
+                thumb["thumb_path"]
+                or (thumb["path"] if thumb["kind"] == "image" else None)
+            ) if thumb else None
+            out.append(d)
+    return out
 
 
 def get_project(project_id: str) -> Optional[dict[str, Any]]:
