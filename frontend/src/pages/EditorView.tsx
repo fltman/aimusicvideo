@@ -112,6 +112,11 @@ export default function EditorView({ projectId }: { projectId: string }) {
                 (job.insert_meta as Partial<Clip>) ?? undefined,
               );
             }
+            // image→video conversions: mount the new video at every occurrence
+            // of the source image (no-op unless this job was a conversion)
+            if (job.asset) {
+              useEditor.getState().placeConvertedVideo(job.id, job.asset);
+            }
           } else if (job.status === 'error') {
             handledJobs.current.add(job.id);
           }

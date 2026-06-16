@@ -45,12 +45,16 @@ export default function ClipView({
   const currentTime = useEditor((s) => s.currentTime);
   const waveform = useEditor((s) => s.analysis?.waveform ?? null);
   const media = useEditor((s) => s.media);
+  const convertClipToVideo = useEditor((s) => s.convertClipToVideo);
+  const convertingAssets = useEditor((s) => s.convertingAssets);
 
   const isEffect = !!clip.filterId || track.kind === 'effect';
   const isText = track.kind === 'text' || clip.text != null;
 
   // image/video clips show their thumbnail as a repeating filmstrip background
   const asset = clip.assetId ? media.find((m) => m.id === clip.assetId) : null;
+  const isImageClip = asset?.kind === 'image' && !isEffect && !isText;
+  const converting = asset ? convertingAssets.includes(asset.id) : false;
   const thumbUrl = asset
     ? asset.thumb_path
       ? filesUrl(asset.thumb_path)
@@ -191,6 +195,29 @@ export default function ClipView({
       <span className="pointer-events-none absolute left-2 top-1 max-w-full truncate pr-2 font-medium text-white/90 drop-shadow">
         {isEffect ? '✨ ' : isText ? 'T ' : ''}{clip.name}
       </span>
+
+      {/* image → video: animate this still in place (and everywhere it's used) */}
+      {isImageClip && (selected || converting) && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!converting) convertClipToVideo(clip.id);
+          }}
+          disabled={converting}
+          title={converting ? 'Generating video…' : 'Turn this image into video'}
+          className={`absolute right-1 top-1 z-20 flex h-5 items-center gap-1 rounded bg-black/55 px-1.5 text-[10px] text-white/90 hover:bg-black/80 ${
+            converting ? 'cursor-default' : ''
+          }`}
+        >
+          {converting ? (
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          ) : (
+            '🎬'
+          )}
+          <span className="hidden sm:inline">{converting ? 'rendering' : 'to video'}</span>
+        </button>
+      )}
 
       {!isSong && (
         <>

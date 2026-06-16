@@ -25,6 +25,8 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let past: TimelineDoc[] = [];
 let future: TimelineDoc[] = [];
 let histBurst = false;
+// jobId → source image asset id, for image→video conversions in flight
+const pendingConverts = new Map<string, string>();
 let histTimer: ReturnType<typeof setTimeout> | null = null;
 const HIST_MAX = 120;
 const SNAP_PX = 8; // snap distance in pixels
@@ -102,6 +104,7 @@ export interface EditorState {
   clips: Clip[];
 
   previewAsset: MediaAsset | null; // source-preview: show a library asset directly
+  convertingAssets: string[];      // image asset ids currently being turned into video
   selectedClipId: string | null;
   selectedClipIds: string[];            // multi-select
   filterWorkspaceClipId: string | null; // effect clip open in the filter workspace
@@ -165,6 +168,11 @@ export interface EditorState {
   splitClipAt: (clipId: string, t: number) => void;
   splitAtPlayhead: () => void;
   removeClip: (clipId: string) => void;
+  // turn an image clip into a video: animate the still, then mount the resulting
+  // video clip on a video track at the same position(s) (every occurrence of that
+  // image), trimmed to match each slot exactly.
+  convertClipToVideo: (clipId: string) => Promise<void>;
+  placeConvertedVideo: (jobId: string, videoAsset: MediaAsset) => void;
 
   // effect clips + filter workspace
   addEffectClip: (
@@ -274,6 +282,7 @@ export const useEditor = create<EditorState>((set, get) => {
     tracks: [],
     clips: [],
     previewAsset: null,
+    convertingAssets: [],
     selectedClipId: null,
     selectedClipIds: [],
     filterWorkspaceClipId: null,
@@ -377,9 +386,11 @@ export const useEditor = create<EditorState>((set, get) => {
       stopRaf();
       audioEl?.pause();
       audioEl = null;
+      pendingConverts.clear();
       set({
         projectId: null, project: null, media: [], analysis: null,
-        tracks: [], clips: [], previewAsset: null, selectedClipId: null,
+        tracks: [], clips: [], previewAsset: null, convertingAssets: [],
+        selectedClipId: null,
         filterWorkspaceClipId: null,
         playing: false, currentTime: 0, duration: 1,
         analysisStatus: 'none', analysisStage: null,
@@ -706,6 +717,87 @@ export const useEditor = create<EditorState>((set, get) => {
       mutate({
         clips: get().clips.filter((c) => c.id !== clipId),
         selectedClipId: get().selectedClipId === clipId ? null : get().selectedClipId,
+      });
+    },
+
+    async convertClipToVideo(clipId) {
+      const { projectId, clips, media } = get();
+      const clip = clips.find((c) => c.id === clipId);
+      if (!projectId || !clip || !clip.assetId) return;
+      const asset = media.find((m) => m.id === clip.assetId);
+      if (!asset || asset.kind !== 'image') return;
+      if (get().convertingAssets.includes(asset.id)) return; // already in flight
+      set({ convertingAssets: [...get().convertingAssets, asset.id] });
+      try {
+        // cover the LONGEST occurrence of this image (kling caps at 10s, and shots
+        // are capped at 10s, so one generation covers every slot)
+        const longest = clips
+          .filter((c) => c.assetId === asset.id)
+          .reduce((m, c) => Math.max(m, c.duration), clip.duration);
+        const { job_id } = await api.animateImage(projectId, asset.id, {
+          duration: Math.max(1, Math.ceil(longest)),
+        });
+        pendingConverts.set(job_id, asset.id);
+      } catch {
+        set({ convertingAssets: get().convertingAssets.filter((a) => a !== asset.id) });
+      }
+    },
+
+    placeConvertedVideo(jobId, videoAsset) {
+      const sourceAssetId = pendingConverts.get(jobId);
+      if (!sourceAssetId) return; // not one of our conversions
+      pendingConverts.delete(jobId);
+      set({
+        convertingAssets: get().convertingAssets.filter((a) => a !== sourceAssetId),
+      });
+      const { clips, media } = get();
+      // every place the source image appears as an image clip
+      const occ = clips.filter(
+        (c) =>
+          c.assetId === sourceAssetId &&
+          media.find((m) => m.id === c.assetId)?.kind === 'image',
+      );
+      if (!occ.length) return;
+
+      // ensure a video track that sits ABOVE the image tracks (topmost wins), so
+      // the generated video shows in place of the source still
+      let tracks = get().tracks;
+      let vt = tracks.find((t) => t.kind === 'video');
+      const firstImage = tracks.findIndex((t) => t.kind === 'image');
+      if (!vt) {
+        vt = { id: uid(), kind: 'video', name: 'Video' };
+        tracks = [vt, ...tracks];
+      } else if (firstImage !== -1 && tracks.indexOf(vt) > firstImage) {
+        tracks = [vt, ...tracks.filter((t) => t.id !== vt!.id)];
+      }
+
+      // don't double-place if a video clip for this asset already sits there
+      const taken = new Set(
+        get()
+          .clips.filter((c) => c.assetId === videoAsset.id)
+          .map((c) => c.start.toFixed(3)),
+      );
+      const added: Clip[] = occ
+        .filter((c) => !taken.has(c.start.toFixed(3)))
+        .map((c) => ({
+          id: uid(),
+          trackId: vt!.id,
+          assetId: videoAsset.id,
+          name: videoAsset.original_name,
+          start: c.start,
+          duration: c.duration, // softcrop: trim the (longer) video to the slot
+          inPoint: 0,
+          motion: 'none', // it's real motion now — no Ken Burns
+          color: '#2b5c8a',
+        }));
+      if (!added.length) {
+        mutate({ tracks });
+        return;
+      }
+      mutate({
+        tracks,
+        clips: [...get().clips, ...added],
+        selectedClipId: added[0].id,
       });
     },
 
