@@ -329,7 +329,24 @@ function Workspace({ clipId }: { clipId: string }) {
       setClipFilter(clipId, res.manifest.id, res.manifest.name);
     } catch (e) {
       window.alert(
-        `Fork failed: ${e instanceof Error ? e.message : 'unknown error'}`,
+        `Save as failed: ${e instanceof Error ? e.message : 'unknown error'}`,
+      );
+    }
+  };
+
+  // ── rename (custom filters only) ────────────────────────────────────────
+  const renameFilter = async () => {
+    if (!filterId || !detail || detail.manifest.builtin) return;
+    const name = window.prompt('Rename filter', detail.manifest.name);
+    if (!name || !name.trim() || name.trim() === detail.manifest.name) return;
+    try {
+      const res = await api.renameFilter(filterId, name.trim());
+      if (!aliveRef.current) return;
+      setDetail(res);
+      setClipFilter(clipId, res.manifest.id, res.manifest.name);
+    } catch (e) {
+      window.alert(
+        `Rename failed: ${e instanceof Error ? e.message : 'unknown error'}`,
       );
     }
   };
@@ -346,17 +363,33 @@ function Workspace({ clipId }: { clipId: string }) {
       {/* header */}
       <header className="flex items-center gap-3 border-b border-edge bg-panel2 px-4 py-2.5">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate text-sm font-semibold text-white">
-            {manifest?.name ?? clip?.name ?? 'Filter'}
-          </h1>
+          {manifest && !manifest.builtin ? (
+            <button
+              onClick={renameFilter}
+              className="group flex items-baseline gap-1 truncate text-sm font-semibold text-white"
+              title="Rename filter"
+            >
+              <span className="truncate">{manifest.name}</span>
+              <span className="text-[11px] text-white/30 group-hover:text-accent">✎</span>
+            </button>
+          ) : (
+            <h1 className="truncate text-sm font-semibold text-white">
+              {manifest?.name ?? clip?.name ?? 'Filter'}
+            </h1>
+          )}
           {manifest && (
             <span className="font-mono text-[11px] text-white/40">
               v{manifest.version}
             </span>
           )}
+          {manifest?.builtin && (
+            <span className="rounded bg-panel3 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white/40">
+              built-in
+            </span>
+          )}
           {manifest?.forkedFrom && (
             <span className="rounded bg-panel3 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white/40">
-              fork
+              custom
             </span>
           )}
         </div>
@@ -364,10 +397,10 @@ function Workspace({ clipId }: { clipId: string }) {
           <button
             onClick={fork}
             disabled={!filterId}
-            className="rounded bg-panel3 px-2.5 py-1 text-xs text-white/80 hover:bg-edge hover:text-white disabled:opacity-40"
-            title="Fork into a new editable filter"
+            className="rounded bg-high/15 px-2.5 py-1 text-xs text-high ring-1 ring-high/30 hover:bg-high/25 disabled:opacity-40"
+            title="Save the current filter as a new named filter in your library"
           >
-            ⑂ Fork
+            💾 Save as…
           </button>
           <button
             onClick={closeFilterWorkspace}

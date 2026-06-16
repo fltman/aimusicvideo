@@ -199,6 +199,17 @@ def create_from_template(name: str) -> dict:
     return fork("_template", name)  # type: ignore[return-value]
 
 
+def rename_filter(fid: str, name: str) -> Optional[dict]:
+    """Rename a (non-built-in) filter in place."""
+    m = _read_manifest(fid)
+    if not m or m.get("builtin"):
+        return None  # built-ins keep their shipped name (use Save As / fork)
+    m["name"] = name
+    m["template"] = False
+    (_filter_dir(fid) / "manifest.json").write_text(json.dumps(m, indent=2))
+    return get_filter(fid)
+
+
 def delete_filter(fid: str) -> bool:
     m = _read_manifest(fid)
     if not m or m.get("builtin"):

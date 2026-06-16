@@ -63,6 +63,10 @@ class FilterFork(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class FilterRename(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class FilterSave(BaseModel):
     code: str
     message: str = "Manual edit"

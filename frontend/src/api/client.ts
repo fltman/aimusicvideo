@@ -110,6 +110,8 @@ export const api = {
   getFilter: (id: string) => req<FilterDetail>(`${API}/filters/${id}`),
   forkFilter: (id: string, name: string) =>
     req<FilterDetail>(`${API}/filters/${id}/fork`, json('POST', { name })),
+  renameFilter: (id: string, name: string) =>
+    req<FilterDetail>(`${API}/filters/${id}`, json('PATCH', { name })),
   saveFilter: (id: string, code: string, message: string) =>
     req<FilterDetail>(`${API}/filters/${id}/save`, json('POST', { code, message })),
   rollbackFilter: (id: string, version: number) =>

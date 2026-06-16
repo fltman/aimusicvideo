@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Response
 from .. import db
 from ..models import (
     FilterChatRequest, FilterCreate, FilterFork, FilterPreviewRequest,
-    FilterRollback, FilterSave,
+    FilterRename, FilterRollback, FilterSave,
 )
 from ..services import filterchat, filters, genqueue
 
@@ -36,6 +36,14 @@ def fork_filter(fid: str, body: FilterFork) -> dict:
     f = filters.fork(fid, body.name)
     if not f:
         raise HTTPException(404, "Filter not found")
+    return f
+
+
+@router.patch("/filters/{fid}")
+def rename_filter(fid: str, body: FilterRename) -> dict:
+    f = filters.rename_filter(fid, body.name)
+    if not f:
+        raise HTTPException(400, "Cannot rename a built-in filter (use Save as)")
     return f
 
 
