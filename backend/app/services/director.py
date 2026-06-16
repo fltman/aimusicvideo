@@ -198,7 +198,10 @@ def render(project: dict) -> dict[str, Any]:
                      "job_id": job["id"]})
 
     # ── WAVE 1 — SHOTS: reuse a library plate or generate referencing the cast.
-    # Generate runners wait for their entities' reference images (see _make_runner). ──
+    # Build the shot jobs but DON'T enqueue them yet — the cast reference images
+    # must finish first so every shot has a real reference and the workers aren't
+    # tied up waiting. A background orchestrator submits them once the cast is done. ──
+    specs: list[dict] = []
     plan: list[dict] = []
     for ps in bplan["shots"]:
         if ps["decision"] not in ("generate", "reuse"):
@@ -208,18 +211,26 @@ def render(project: dict) -> dict[str, Any]:
         meta = {"motion": ps["motion"], "beat": ps.get("beat"),
                 "bible_entity": primary, "intent": ps.get("intent")}
         label = f"shot {idx + 1}" + (" (reuse)" if ps["decision"] == "reuse" else "")
-        job = genqueue.submit(
-            pid, "image", label, _make_runner(pid, ps, story),
-            insert_at=ps["start"], insert_duration=ps["duration"], insert_meta=meta)
+        specs.append({"label": label, "runner": _make_runner(pid, ps, story),
+                      "insert_at": ps["start"], "insert_duration": ps["duration"],
+                      "insert_meta": meta})
         plan.append({
             "idx": idx, "start": ps["start"], "duration": ps["duration"],
             "lyric": ps.get("lyric", ""), "prompt": ps["prompt"],
-            "motion": ps["motion"], "job_id": job["id"],
+            "motion": ps["motion"],
             "decision": ps["decision"], "reuse_asset_id": ps.get("reuse_asset_id"),
             "bible_entity": primary, "beat": ps.get("beat"),
             "intent": ps.get("intent"), "shot_size": ps.get("shot_size"),
         })
     plan.sort(key=lambda p: p["start"])
+
+    cast_ids = [c["job_id"] for c in cast]
+    if cast_ids:
+        # cast first → then shots (in a daemon thread so the request returns now)
+        threading.Thread(target=_shots_after_cast, args=(pid, cast_ids, specs),
+                         daemon=True).start()
+    else:
+        _enqueue_shot_specs(pid, specs)        # nothing to cast → shoot straight away
 
     dur = float(project.get("duration_sec") or 4.0)
     title = (story.get("logline") and _title_from(project, story)) or \
@@ -229,7 +240,7 @@ def render(project: dict) -> dict[str, Any]:
 
     return {
         "shots": len(plan), "concept": script.get("concept") or story.get("logline", ""),
-        "plan": plan, "texts": texts, "cast": cast,
+        "plan": plan, "texts": texts, "cast": cast, "shots_pending": bool(cast_ids),
         "effects": fx["effects"], "interlude_clips": fx["interlude_clips"],
         "new_filters": fx["new_filters"],
         "generate_count": bplan["generate_count"], "reuse_count": bplan["reuse_count"],
@@ -238,6 +249,58 @@ def render(project: dict) -> dict[str, Any]:
                       "settings": story.get("settings", []),
                       "sections": rhythm["sections"]},
     }
+
+
+def _enqueue_shot_specs(pid: str, specs: list[dict]) -> None:
+    for s in specs:
+        genqueue.submit(pid, "image", s["label"], s["runner"],
+                        insert_at=s["insert_at"], insert_duration=s["insert_duration"],
+                        insert_meta=s["insert_meta"])
+
+
+def _shots_after_cast(pid: str, cast_ids: list[str], specs: list[dict],
+                      timeout: float = 300.0) -> None:
+    """Wait for the cast reference jobs to finish, then enqueue the shot jobs."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if all((genqueue.get_job(j) or {}).get("status") in ("done", "error")
+               for j in cast_ids):
+            break
+        time.sleep(_POLL)
+    _enqueue_shot_specs(pid, specs)
+
+
+def moodboard(project: dict, n: int = 4) -> dict:
+    """Generate a small moodboard (overall feeling/palette/atmosphere) for review.
+
+    Uses the analysis's visual_suggestions (already on-mood) plus the story's tone/
+    motif. Images go to the media library tagged 'moodboard' — not the timeline.
+    """
+    project = db.get_project(project["id"]) or project
+    pid = project["id"]
+    n = max(2, min(6, int(n)))
+    m = project.get("mood_json") or {}
+    story = project.get("story_json") or {}
+    style = narrative._style_suffix(project)
+    tone = story.get("tone") or m.get("mood") or "evocative"
+    motif = story.get("motif") or (m.get("keywords") or ["light"])[0]
+
+    prompts = [f"{s}. {style}" for s in (m.get("visual_suggestions") or [])[:n]]
+    while len(prompts) < n:
+        prompts.append(f"Mood frame — {tone} atmosphere, {motif}, no people, no text. {style}")
+
+    board = []
+    for i, p in enumerate(prompts[:n]):
+        job = genqueue.submit(pid, "image", f"moodboard {i + 1}", _moodboard_runner(pid, p))
+        board.append({"prompt": p, "job_id": job["id"]})
+    return {"board": board, "count": len(board)}
+
+
+def _moodboard_runner(pid: str, prompt: str) -> Callable[[], dict]:
+    def runner() -> dict:
+        png = imagegen.generate_image(prompt, None)
+        return chat_service._save_image_asset(pid, png, prompt, tags=["moodboard"])
+    return runner
 
 
 def _cast_runner(pid: str, entity_id: str, prompt: str, story: dict) -> Callable[[], dict]:

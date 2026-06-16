@@ -124,6 +124,26 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "generate_moodboard",
+            "description": (
+                "Generate a small MOODBOARD — a few images capturing the song's "
+                "overall visual feeling, palette and atmosphere (not specific shots "
+                "or characters) — so the user can verify the direction before casting "
+                "and rendering. OFFER this after developing the story, or call it when "
+                "the user wants to check the vibe. Images go to the media library."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer", "description": "how many frames "
+                              "(default 4)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_shots",
             "description": (
                 "STAGE 2 of directing — board the SHOT LIST for the current story: "
@@ -397,7 +417,8 @@ def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
         "• develop_story → propose_shots → render_video — directing a full video is "
         "ITERATIVE and done IN THAT ORDER, keeping the user in control:\n"
         "   1) develop_story — write/revise the story, then present it and ask for "
-        "changes. Generates nothing.\n"
+        "changes. Generates nothing. You MAY then offer a quick moodboard "
+        "(generate_moodboard) to verify the overall feeling before boarding shots.\n"
         "   2) propose_shots — only once the user likes the story; board the shots, "
         "present them, ask for changes. Renders nothing.\n"
         "   3) render_video — only once the user approves the shots; this spends "
@@ -655,6 +676,18 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
                       f"Characters: {chars}. Settings: {setts}. "
                       "Present this to the user conversationally and ask what they'd change "
                       "before boarding shots.")
+        elif name == "generate_moodboard":
+            from . import director
+            try:
+                cnt = int(args["count"]) if args.get("count") is not None else 4
+            except (TypeError, ValueError):
+                cnt = 4
+            mb = director.moodboard(project, n=cnt)
+            for b in mb["board"]:
+                queued.append({"id": b["job_id"], "kind": "image", "label": "moodboard"})
+            result = (f"Generating a {mb['count']}-frame moodboard to capture the "
+                      "feeling — it'll appear in the media library shortly. Ask the user "
+                      "whether the vibe is right before casting and rendering.")
         elif name == "propose_shots":
             from . import director
             try:
@@ -677,17 +710,21 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
             for c in direct.get("cast", []):
                 queued.append({"id": c["job_id"], "kind": "image",
                                "label": f"cast · {c['name']}"})
-            for s in direct.get("plan", []):
-                queued.append({"id": s["job_id"], "kind": "image",
-                               "label": f"shot {s['idx'] + 1}"})
+            # when a cast is generated, the shots are enqueued only AFTER it finishes,
+            # so their jobs don't exist yet — the queue poller picks them up then.
+            if not direct.get("shots_pending"):
+                for s in direct.get("plan", []):
+                    if s.get("job_id"):
+                        queued.append({"id": s["job_id"], "kind": "image",
+                                       "label": f"shot {s['idx'] + 1}"})
             cast_names = ", ".join(c["name"] for c in direct.get("cast", [])
                                    if c["kind"] == "character")
             loc_names = ", ".join(c["name"] for c in direct.get("cast", [])
                                   if c["kind"] == "scene")
             bits = []
             if direct.get("cast"):
-                bits.append(f"casting {len(direct['cast'])} reference image(s) first")
-            bits.append(f"then rendering {direct['generate_count']} shot(s)")
+                bits.append(f"generating {len(direct['cast'])} reference image(s) first")
+            bits.append(f"then {direct['generate_count']} shot(s)")
             if direct.get("reuse_count"):
                 bits.append(f"reusing {direct['reuse_count']}")
             if direct.get("new_filters"):
@@ -696,9 +733,11 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
                 f"Rendering — {', '.join(bits)}. "
                 + (f"**Cast:** {cast_names}. " if cast_names else "")
                 + (f"**Locations:** {loc_names}. " if loc_names else "")
-                + "The reference portraits/plates generate FIRST so every shot can "
-                "reference them and the characters & scenes stay consistent. Title and "
-                "effects are placed now; shots land on the timeline as they finish.")
+                + ("The reference portraits/plates render FIRST and complete before "
+                   "the shots begin, so every shot references a finished character & "
+                   "scene. " if direct.get("shots_pending") else "")
+                + "Title and effects are placed now; the shots land on the timeline as "
+                "they generate.")
         else:
             result = "skipped"
         api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),
