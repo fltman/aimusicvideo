@@ -107,13 +107,30 @@ def list_filters() -> list[dict]:
     return out
 
 
+def list_presets(fid: str) -> list[dict]:
+    p = _filter_dir(fid) / "presets.json"
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text())
+    except (ValueError, OSError):
+        return []
+
+
+def save_preset(fid: str, name: str, params: dict) -> list[dict]:
+    presets = [x for x in list_presets(fid) if x.get("name") != name]
+    presets.append({"name": name, "params": params})
+    (_filter_dir(fid) / "presets.json").write_text(json.dumps(presets))
+    return presets
+
+
 def get_filter(fid: str) -> Optional[dict]:
     m = _read_manifest(fid)
     if not m:
         return None
     code = (_filter_dir(fid) / "filter.py").read_text()
     return {"manifest": m, "code": code, "params": read_params(fid),
-            "versions": list_versions(fid)}
+            "versions": list_versions(fid), "presets": list_presets(fid)}
 
 
 # ── versions ─────────────────────────────────────────────────────────────────
@@ -237,10 +254,14 @@ def write_chat(fid: str, messages: list[dict]) -> None:
 # ── preview render (via the generation queue) ────────────────────────────────
 
 PREVIEW_W, PREVIEW_H, PREVIEW_FPS, PREVIEW_DUR = 854, 480, 24, 5.0
+FAST_W, FAST_H, FAST_FPS, FAST_DUR = 426, 240, 20, 2.5
 
 
-def render_preview(project: dict, fid: str, params: dict, cursor_time: float) -> dict:
-    """Enqueue a short timeline-under-playhead preview rendered through filter `fid`."""
+def render_preview(project: dict, fid: str, params: dict, cursor_time: float,
+                   fast: bool = False) -> dict:
+    """Enqueue a short timeline-under-playhead preview rendered through filter `fid`.
+
+    `fast` renders at low res / short duration for quick vibe-coding iteration."""
     pid = project["id"]
     media = {
         m["id"]: {"path": str(config.DATA_DIR / m["path"]),
@@ -258,12 +279,16 @@ def render_preview(project: dict, fid: str, params: dict, cursor_time: float) ->
     out_id = uuid.uuid4().hex
     out_path = preview_dir / f"{out_id}.mp4"
 
+    pw, ph, pfps, pdur = (
+        (FAST_W, FAST_H, FAST_FPS, FAST_DUR) if fast
+        else (PREVIEW_W, PREVIEW_H, PREVIEW_FPS, PREVIEW_DUR)
+    )
     spec = {
         "filter_path": str(_filter_dir(fid) / "filter.py"),
         "params": params or default_params(fid),
         "beats": project.get("beats_json") or {},
-        "window": {"start": start, "duration": PREVIEW_DUR, "fps": PREVIEW_FPS},
-        "size": {"w": PREVIEW_W, "h": PREVIEW_H},
+        "window": {"start": start, "duration": pdur, "fps": pfps},
+        "size": {"w": pw, "h": ph},
         "tracks": tl.get("tracks", []), "clips": tl.get("clips", []),
         "media": media, "song_wav": song,
         "data_dir": str(config.DATA_DIR), "output": str(out_path),

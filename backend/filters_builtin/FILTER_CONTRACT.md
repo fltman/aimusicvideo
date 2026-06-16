@@ -33,6 +33,8 @@ shape/dtype). `numpy as np` and `cv2` are available to import.
 - `ctx.rms` — float `0..1`: overall loudness at this frame (for constant motion).
 - `ctx.onsets` — `{"bass": [t...], "mid": [...], "high": [...]}` raw onset times
   in **seconds relative to the start of this render window** (advanced use).
+- `ctx.clip_progress` — float `0..1`: how far through THIS effect clip we are
+  (0 at its start, 1 at its end). Use it for transitions / fades.
 - `ctx.t` (seconds), `ctx.i` (frame index), `ctx.fps`, `ctx.w`, `ctx.h`.
 - `ctx.rng` — a seeded `numpy.random.Generator` (use it for any randomness so
   renders are reproducible; do not call `np.random` directly).

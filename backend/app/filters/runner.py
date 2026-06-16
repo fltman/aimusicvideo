@@ -236,6 +236,7 @@ def main():
             bass=float(envs["bass"][i]), mid=float(envs["mid"][i]),
             high=float(envs["high"][i]), rms=float(rms[i]),
             onsets=onsets, rng=rng,
+            clip_progress=(i / (n - 1) if n > 1 else 0.0),  # 0..1 across the clip
         )
         try:
             out = process(frame, ctx, params)

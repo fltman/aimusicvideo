@@ -1,0 +1,8 @@
+{
+  "id": "transition-fade-out",
+  "name": "Fade Out",
+  "description": "Transition: fades down to black over the end of the effect clip.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["transition", "fade"]
+}

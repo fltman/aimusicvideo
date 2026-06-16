@@ -6,8 +6,13 @@ fed back once for a fix; if it still fails nothing is saved.
 """
 from __future__ import annotations
 
+import base64
+import os
 import re
+import subprocess
+import tempfile
 import types
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -15,6 +20,33 @@ import numpy as np
 
 from .. import config
 from . import filters
+
+
+def _preview_frame_b64(preview_url: str | None) -> str | None:
+    """Extract a mid frame from a rendered preview mp4 → base64 PNG data URL."""
+    if not preview_url:
+        return None
+    rel = preview_url.split("/files/", 1)[-1]
+    path = config.DATA_DIR / rel
+    if not path.exists():
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+        out = tf.name
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-ss", "1", "-i", str(path), "-frames:v", "1",
+             "-vf", "scale=512:-1", out],
+            capture_output=True,
+        )
+        if r.returncode != 0 or not Path(out).exists():
+            return None
+        b64 = base64.b64encode(Path(out).read_bytes()).decode()
+        return f"data:image/png;base64,{b64}"
+    finally:
+        try:
+            os.unlink(out)
+        except OSError:
+            pass
 
 _TIMEOUT = 180.0
 _CODE_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
@@ -66,7 +98,7 @@ def _smoke_test(code: str) -> list[dict]:
     ctx = types.SimpleNamespace(
         t=0.5, i=12, fps=24, w=64, h=48, bass=0.8, mid=0.4, high=0.6,
         rms=0.5, onsets={"bass": [0.5], "mid": [], "high": []},
-        rng=np.random.default_rng(0),
+        rng=np.random.default_rng(0), clip_progress=0.5,
     )
     p = {pp["key"]: pp.get("default") for pp in params if "key" in pp}
     out = process(frame, ctx, p)
@@ -88,8 +120,11 @@ def _post(messages: list[dict]) -> str:
     return resp.json()["choices"][0]["message"].get("content") or ""
 
 
-def chat(fid: str, user_message: str) -> dict:
-    """One vibe-code turn. Saves a new version on success."""
+def chat(fid: str, user_message: str, preview_url: str | None = None) -> dict:
+    """One vibe-code turn. Saves a new version on success.
+
+    If `preview_url` points at a rendered preview, a frame is attached so the
+    (multimodal) model can SEE the current result and self-correct."""
     f = filters.get_filter(fid)
     if not f:
         return {"error": "filter not found"}
@@ -98,7 +133,17 @@ def chat(fid: str, user_message: str) -> dict:
     convo = [{"role": "system", "content": _system_prompt(f["code"])}]
     for m in history[-8:]:
         convo.append({"role": m["role"], "content": m["content"]})
-    convo.append({"role": "user", "content": user_message})
+
+    img = _preview_frame_b64(preview_url)
+    if img:
+        convo.append({"role": "user", "content": [
+            {"type": "text", "text": user_message +
+             "\n\n(A frame of the current rendered result is attached — look at "
+             "it and adjust the effect accordingly.)"},
+            {"type": "image_url", "image_url": {"url": img}},
+        ]})
+    else:
+        convo.append({"role": "user", "content": user_message})
 
     last_err = None
     for attempt in range(2):

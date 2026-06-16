@@ -5,8 +5,8 @@ from fastapi import APIRouter, HTTPException, Response
 
 from .. import db
 from ..models import (
-    FilterChatRequest, FilterCreate, FilterFork, FilterPreviewRequest,
-    FilterRename, FilterRollback, FilterSave,
+    FilterChatRequest, FilterCreate, FilterFork, FilterPreset,
+    FilterPreviewRequest, FilterRename, FilterRollback, FilterSave,
 )
 from ..services import filterchat, filters, genqueue
 
@@ -74,6 +74,14 @@ def delete_filter(fid: str) -> Response:
     return Response(status_code=204)
 
 
+@router.post("/filters/{fid}/presets")
+def save_preset(fid: str, body: FilterPreset) -> dict:
+    if not filters.get_filter(fid):
+        raise HTTPException(404, "Filter not found")
+    filters.save_preset(fid, body.name, body.params)
+    return filters.get_filter(fid)
+
+
 @router.get("/filters/{fid}/chat")
 def get_filter_chat(fid: str) -> list[dict]:
     return filters.read_chat(fid)
@@ -81,7 +89,7 @@ def get_filter_chat(fid: str) -> list[dict]:
 
 @router.post("/filters/{fid}/chat")
 def filter_chat(fid: str, body: FilterChatRequest) -> dict:
-    return filterchat.chat(fid, body.message)
+    return filterchat.chat(fid, body.message, body.preview_url)
 
 
 @router.post("/projects/{pid}/filter-preview")
@@ -90,7 +98,7 @@ def filter_preview(pid: str, body: FilterPreviewRequest) -> dict:
     if project is None:
         raise HTTPException(404, "Project not found")
     job = filters.render_preview(project, body.filter_id, body.params,
-                                 body.cursor_time)
+                                 body.cursor_time, body.fast)
     return {"job_id": job["id"]}
 
 

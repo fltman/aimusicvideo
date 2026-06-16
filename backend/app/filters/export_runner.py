@@ -154,10 +154,12 @@ def main():
                 t=t, i=gi, fps=fps, w=w, h=h,
                 bass=float(envs["bass"][gi]), mid=float(envs["mid"][gi]),
                 high=float(envs["high"][gi]), rms=float(rms[gi]),
-                onsets=onsets, rng=rng,
+                onsets=onsets, rng=rng, clip_progress=0.0,
             )
             for eff in effects:
                 if eff["start"] <= t < eff["end"]:
+                    ctx.clip_progress = (t - eff["start"]) / max(
+                        1e-3, eff["end"] - eff["start"])
                     try:
                         out = eff["process"](frame, ctx, eff["params"])
                         if out is not None:

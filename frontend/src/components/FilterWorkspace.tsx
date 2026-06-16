@@ -63,6 +63,7 @@ function Workspace({ clipId }: { clipId: string }) {
 
   // preview
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fast, setFast] = useState(true);
   const [renderStatus, setRenderStatus] = useState<RenderStatus>('idle');
   const [renderError, setRenderError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(true); // no preview yet ⇒ dirty
@@ -143,7 +144,7 @@ function Workspace({ clipId }: { clipId: string }) {
     };
 
     api
-      .renderFilterPreview(projectId, filterId, params, cursor)
+      .renderFilterPreview(projectId, filterId, params, cursor, fast)
       .then(({ job_id }) => {
         if (!aliveRef.current) return;
         poll(job_id);
@@ -154,7 +155,7 @@ function Workspace({ clipId }: { clipId: string }) {
         setRenderStatus('error');
         renderingRef.current = false;
       });
-  }, [projectId, filterId, detail, clip, clearPoll]);
+  }, [projectId, filterId, detail, clip, clearPoll, fast]);
 
   renderRef.current = renderPreview;
 
@@ -256,7 +257,7 @@ function Workspace({ clipId }: { clipId: string }) {
     setChat((c) => [...c, { role: 'user', content: message }]);
     setVibing(true);
     try {
-      const res = await api.filterChat(filterId, message);
+      const res = await api.filterChat(filterId, message, previewUrl);
       if (!aliveRef.current) return;
       setChat((c) => [...c, { role: 'assistant', content: res.reply }]);
       if (res.error) {
@@ -467,6 +468,17 @@ function Workspace({ clipId }: { clipId: string }) {
                       ? '▶ Render preview'
                       : '↻ Re-render'}
                 </button>
+                <button
+                  onClick={() => setFast((v) => !v)}
+                  className={`rounded px-2 py-1.5 text-[11px] ${
+                    fast
+                      ? 'bg-high/15 text-high ring-1 ring-high/30'
+                      : 'bg-panel3 text-white/50 hover:text-white'
+                  }`}
+                  title="Fast preview: low-res, ~2.5s, for quick iteration"
+                >
+                  {fast ? '⚡ fast' : 'HQ'}
+                </button>
                 {dirty && renderStatus !== 'rendering' && (
                   <span className="text-[11px] text-mid">
                     params changed — preview is stale
@@ -485,11 +497,44 @@ function Workspace({ clipId }: { clipId: string }) {
               {loading ? (
                 <p className="text-xs text-white/30">Loading controls…</p>
               ) : detail && detail.params.length > 0 ? (
-                <FilterControls
-                  params={detail.params}
-                  values={values}
-                  onChange={onParamChange}
-                />
+                <>
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                    {(detail.presets ?? []).map((ps) => (
+                      <button
+                        key={ps.name}
+                        onClick={() => {
+                          updateClipParams(clipId, ps.params);
+                          setDirty(true);
+                          renderRef.current();
+                        }}
+                        className="rounded-full bg-panel3 px-2.5 py-1 text-[11px] text-white/70 hover:bg-accent/20 hover:text-accent"
+                      >
+                        {ps.name}
+                      </button>
+                    ))}
+                    <button
+                      onClick={async () => {
+                        if (!filterId) return;
+                        const name = window.prompt('Preset name');
+                        if (!name || !name.trim()) return;
+                        const res = await api.saveFilterPreset(
+                          filterId,
+                          name.trim(),
+                          values,
+                        );
+                        if (aliveRef.current) setDetail(res);
+                      }}
+                      className="rounded-full border border-dashed border-edge px-2.5 py-1 text-[11px] text-white/50 hover:border-accent hover:text-accent"
+                    >
+                      + save preset
+                    </button>
+                  </div>
+                  <FilterControls
+                    params={detail.params}
+                    values={values}
+                    onChange={onParamChange}
+                  />
+                </>
               ) : (
                 <p className="text-xs text-white/30">
                   This filter exposes no parameters.

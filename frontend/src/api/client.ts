@@ -125,18 +125,29 @@ export const api = {
     req<FilterDetail>(`${API}/filters/${id}/rollback`, json('POST', { version })),
   deleteFilter: (id: string) =>
     req<void>(`${API}/filters/${id}`, { method: 'DELETE' }),
+  saveFilterPreset: (id: string, name: string, params: Record<string, unknown>) =>
+    req<FilterDetail>(`${API}/filters/${id}/presets`, json('POST', { name, params })),
   getFilterChat: (id: string) => req<FilterChatMsg[]>(`${API}/filters/${id}/chat`),
-  filterChat: (id: string, message: string) =>
-    req<FilterChatResult>(`${API}/filters/${id}/chat`, json('POST', { message })),
+  filterChat: (id: string, message: string, previewUrl?: string | null) =>
+    req<FilterChatResult>(
+      `${API}/filters/${id}/chat`,
+      json('POST', { message, preview_url: previewUrl ?? null }),
+    ),
   renderFilterPreview: (
     pid: string,
     filterId: string,
     params: Record<string, unknown>,
     cursorTime: number,
+    fast?: boolean,
   ) =>
     req<{ job_id: string }>(
       `${API}/projects/${pid}/filter-preview`,
-      json('POST', { filter_id: filterId, params, cursor_time: cursorTime }),
+      json('POST', {
+        filter_id: filterId,
+        params,
+        cursor_time: cursorTime,
+        fast: !!fast,
+      }),
     ),
 
   // ── export ────────────────────────────────────────────────────────────

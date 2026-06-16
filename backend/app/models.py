@@ -76,14 +76,21 @@ class FilterRollback(BaseModel):
     version: int
 
 
+class FilterPreset(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 class FilterChatRequest(BaseModel):
     message: str
+    preview_url: Optional[str] = None  # a rendered frame for the model to "see"
 
 
 class FilterPreviewRequest(BaseModel):
     filter_id: str
     params: dict[str, Any] = Field(default_factory=dict)
     cursor_time: float = 0.0
+    fast: bool = False
 
 
 class AutoDirectRequest(BaseModel):

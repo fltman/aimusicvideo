@@ -1,0 +1,8 @@
+{
+  "id": "transition-dip-to-black",
+  "name": "Dip to Black",
+  "description": "Transition: dips to black in the middle of the effect clip (fade out then in) — a clean cut between two shots.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["transition", "fade", "cut"]
+}

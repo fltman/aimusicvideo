@@ -179,11 +179,17 @@ export interface FilterVersion {
   ts: string;
 }
 
+export interface FilterPreset {
+  name: string;
+  params: Record<string, unknown>;
+}
+
 export interface FilterDetail {
   manifest: FilterManifest;
   code: string;
   params: FilterParam[];
   versions: FilterVersion[];
+  presets?: FilterPreset[];
 }
 
 export interface FilterChatMsg {

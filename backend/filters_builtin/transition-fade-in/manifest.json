@@ -1,0 +1,8 @@
+{
+  "id": "transition-fade-in",
+  "name": "Fade In",
+  "description": "Transition: fades up from black over the start of the effect clip. Place at a cut to ease into a shot.",
+  "version": 1,
+  "builtin": true,
+  "tags": ["transition", "fade"]
+}
