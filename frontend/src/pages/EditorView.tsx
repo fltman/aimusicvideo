@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store/editorStore';
 import { api } from '../api/client';
-import type { GenJob, SongStatus } from '../types';
+import type { Clip, GenJob, SongStatus } from '../types';
 import Transport from '../components/Transport';
 import MediaLibrary from '../components/MediaLibrary';
 import PreviewStage from '../components/PreviewStage';
@@ -110,6 +110,7 @@ export default function EditorView({ projectId }: { projectId: string }) {
                 job.insert_at,
                 undefined,
                 job.insert_duration ?? undefined,
+                (job.insert_meta as Partial<Clip>) ?? undefined,
               );
             }
           } else if (job.status === 'error') {

@@ -63,26 +63,35 @@ def _mood_brief(project: dict) -> str:
     return " | ".join(parts) or "(no mood analysis)"
 
 
-def _generate_prompts(project: dict, shots: list[dict]) -> list[str]:
-    """One LLM call → a cinematic image prompt per shot (aligned by index)."""
+_MOTIONS = ["zoom-in", "zoom-out", "pan-left", "pan-right", "pan-up", "pan-down"]
+
+
+def _plan_shots(project: dict, shots: list[dict]) -> tuple[str, list[dict]]:
+    """One LLM call → (concept, [{prompt, motion}]) — a cohesive cinematic plan."""
     shot_lines = "\n".join(
-        f"{i}. [{s['start']:.0f}s] {s['lyric'] or '(instrumental)'}"
+        f"{i}. [{s['start']:.0f}s, {s['duration']:.0f}s] {s['lyric'] or '(instrumental)'}"
         for i, s in enumerate(shots)
     )
     system = (
-        "You are the visual director of a music video. Given the song's mood and "
-        "a numbered shot list (each with its lyric or 'instrumental'), write ONE "
-        "vivid, concrete, cinematic image prompt per shot — a cohesive visual "
-        "story in a consistent style/palette across all shots, 16:9, no text "
-        "overlays. Return ONLY a JSON array of strings, exactly one per shot, in "
-        "order."
+        "You are the director of a music video. Design a COHESIVE cinematic "
+        "sequence from the song's mood and the numbered shot list. Pick a single "
+        "visual world (location, palette, lighting, recurring subject/motif) and "
+        "keep every shot in it, while VARYING the framing (wide establishing, "
+        "medium, intimate close-up, evocative detail, abstract texture) so it "
+        "feels edited, not a slideshow. Return STRICT JSON: "
+        '{"concept":"<1 sentence: world + palette + motif>","shots":[{"prompt":'
+        '"<vivid, concrete 16:9 cinematic image prompt, in the concept, no text/'
+        'captions>","motion":"<zoom-in|zoom-out|pan-left|pan-right|pan-up|'
+        'pan-down>"}]} — exactly one shots entry per input shot, in order.'
     )
     user = f"SONG MOOD: {_mood_brief(project)}\n\nSHOTS:\n{shot_lines}"
-    fallback = [
-        f"Cinematic 16:9 shot reflecting '{(project.get('mood_json') or {}).get('mood', 'moody')}'"
-        + (f": {s['lyric']}" if s["lyric"] else "")
-        for s in shots
-    ]
+    fallback = (
+        (project.get("mood_json") or {}).get("mood", "moody cinematic"),
+        [{"prompt": f"Cinematic 16:9 shot, {(project.get('mood_json') or {}).get('mood','moody')}"
+                    + (f": {s['lyric']}" if s["lyric"] else ""),
+          "motion": _MOTIONS[i % len(_MOTIONS)]}
+         for i, s in enumerate(shots)],
+    )
     if not config.OPENROUTER_API_KEY:
         return fallback
     try:
@@ -95,41 +104,82 @@ def _generate_prompts(project: dict, shots: list[dict]) -> list[str]:
                   "messages": [{"role": "system", "content": system},
                                {"role": "user", "content": user}],
                   "response_format": {"type": "json_object"}},
-            timeout=90,
+            timeout=120,
         )
         resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"].get("content") or ""
-        content = content.strip().strip("`")
-        if content.startswith("json"):
-            content = content[4:]
-        data = json.loads(content[content.index("["):content.rindex("]") + 1]) \
-            if "[" in content else json.loads(content)
-        prompts = data if isinstance(data, list) else list(data.values())[0]
-        prompts = [str(p) for p in prompts]
-        if len(prompts) < len(shots):
-            prompts += fallback[len(prompts):]
-        return prompts[:len(shots)]
+        content = (resp.json()["choices"][0]["message"].get("content") or "").strip()
+        data = json.loads(content[content.index("{"):content.rindex("}") + 1])
+        designed = data.get("shots") or []
+        out = []
+        for i in range(len(shots)):
+            d = designed[i] if i < len(designed) and isinstance(designed[i], dict) else {}
+            out.append({"prompt": str(d.get("prompt") or fallback[1][i]["prompt"]),
+                        "motion": d.get("motion") if d.get("motion") in _MOTIONS
+                        else _MOTIONS[i % len(_MOTIONS)]})
+        return str(data.get("concept") or fallback[0]), out
     except Exception:
         return fallback
 
 
+def _snap_to_beat(t: float, bass: list[float]) -> float:
+    if not bass:
+        return t
+    nearest = min(bass, key=lambda b: abs(b - t))
+    return round(nearest, 2) if abs(nearest - t) < 0.4 else t
+
+
+def _refs(pid: str) -> list[bytes]:
+    out = []
+    for a in chat_service._reference_assets(pid)[:2]:
+        try:
+            out.append((config.DATA_DIR / a["path"]).read_bytes())
+        except OSError:
+            pass
+    return out
+
+
+def _beat_effects(project: dict, shots: list[dict]) -> list[dict]:
+    """A cohesive look + a bass-driven punch on the densest section."""
+    dur = float(project.get("duration_sec") or 0.0)
+    bass = (project.get("beats_json") or {}).get("bass") or []
+    fx = [{"filter_id": "gfunk-vignette", "name": "Vignette", "at": 0.0,
+           "duration": round(dur, 2)}]
+    if bass and dur > 10 and shots:
+        best = max(shots, key=lambda s: sum(
+            1 for b in bass if s["start"] <= b < s["start"] + min(8.0, s["duration"])))
+        fx.append({"filter_id": "lola-bass-zoom", "name": "Bass Zoom",
+                   "at": best["start"], "duration": min(8.0, best["duration"])})
+    return fx
+
+
 def auto_direct(project: dict, max_shots: int = 10) -> dict[str, Any]:
-    """Plan shots, generate prompts, and enqueue auto-placed image generations."""
+    """Plan a cohesive draft: moving shots + title + beat-synced effects."""
     max_shots = max(1, min(MAX_SHOTS_CAP, int(max_shots)))
     pid = project["id"]
     shots = _build_shots(project, max_shots)
-    prompts = _generate_prompts(project, shots)
+    bass = (project.get("beats_json") or {}).get("bass") or []
+    for s in shots:
+        s["start"] = _snap_to_beat(s["start"], bass)
+
+    concept, designed = _plan_shots(project, shots)
+    refs = _refs(pid) or None
 
     plan = []
     for i, shot in enumerate(shots):
-        prompt = prompts[i] if i < len(prompts) else "cinematic shot"
+        prompt, motion = designed[i]["prompt"], designed[i]["motion"]
 
-        def runner(p=prompt):
-            png = imagegen.generate_image(p, None)
+        def runner(p=prompt, r=refs):
+            png = imagegen.generate_image(p, r)
             return chat_service._save_image_asset(pid, png, p)
 
         job = genqueue.submit(pid, "image", f"shot {i + 1}/{len(shots)}", runner,
                               insert_at=shot["start"],
-                              insert_duration=shot["duration"])
-        plan.append({**shot, "prompt": prompt, "job_id": job["id"]})
-    return {"shots": len(plan), "plan": plan}
+                              insert_duration=shot["duration"],
+                              insert_meta={"motion": motion})
+        plan.append({**shot, "prompt": prompt, "motion": motion, "job_id": job["id"]})
+
+    dur = float(project.get("duration_sec") or 4.0)
+    texts = [{"text": (project.get("name") or "Untitled").upper(), "at": 0.0,
+              "duration": min(4.0, dur), "position": "center", "anim": "fade"}]
+    return {"shots": len(plan), "concept": concept, "plan": plan,
+            "texts": texts, "effects": _beat_effects(project, shots)}

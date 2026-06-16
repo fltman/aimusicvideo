@@ -103,10 +103,13 @@ export const api = {
 
   // ── AI auto-director ──────────────────────────────────────────────────
   autoDirect: (id: string, maxShots: number) =>
-    req<{ shots: number; plan: unknown[] }>(
-      `${API}/projects/${id}/auto-direct`,
-      json('POST', { max_shots: maxShots }),
-    ),
+    req<{
+      shots: number;
+      concept?: string;
+      plan: unknown[];
+      texts?: { text: string; at: number; duration: number; position: 'top' | 'center' | 'bottom' }[];
+      effects?: { filter_id: string; name: string; at: number; duration: number }[];
+    }>(`${API}/projects/${id}/auto-direct`, json('POST', { max_shots: maxShots })),
 
   varyImage: (id: string, assetId: string) =>
     req<{ job_id: string }>(

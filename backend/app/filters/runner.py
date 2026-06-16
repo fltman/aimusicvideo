@@ -88,6 +88,33 @@ def compute_rms(song_wav, t0, duration, n_frames, fps):
 
 # ── compositor: timeline visual under playhead → program frame ───────────────
 
+def ken_burns(img, motion, p, w, h):
+    """Cinematic motion on a still: slow zoom / pan driven by progress p (0..1)."""
+    if motion == "zoom-out":
+        s = 1.0 + 0.14 * (1.0 - p)
+        bw, bh = int(w * s), int(h * s)
+        x, y = (bw - w) // 2, (bh - h) // 2
+    elif motion in ("pan-left", "pan-right", "pan-up", "pan-down"):
+        s = 1.16
+        bw, bh = int(w * s), int(h * s)
+        mx, my = bw - w, bh - h
+        if motion == "pan-left":
+            x, y = int(mx * (1 - p)), my // 2
+        elif motion == "pan-right":
+            x, y = int(mx * p), my // 2
+        elif motion == "pan-up":
+            x, y = mx // 2, int(my * (1 - p))
+        else:
+            x, y = mx // 2, int(my * p)
+    else:  # zoom-in (default)
+        s = 1.0 + 0.14 * p
+        bw, bh = int(w * s), int(h * s)
+        x, y = (bw - w) // 2, (bh - h) // 2
+    big = cv2.resize(img, (max(bw, w + 2), max(bh, h + 2)),
+                     interpolation=cv2.INTER_LINEAR)
+    return np.ascontiguousarray(big[y:y + h, x:x + w])
+
+
 def _ffmpeg_extract(path, ss, dur, fps, w, h):
     """Decode a window of a video as cover-cropped BGR frames (reliable seeking)."""
     cmd = [
@@ -174,7 +201,13 @@ class Compositor:
             return black
         if asset["kind"] == "image":
             f = self._image_frame(asset)
-            return f if f is not None else black
+            if f is None:
+                return black
+            motion = clip.get("motion") or "zoom-in"  # subtle Ken Burns by default
+            if motion != "none" and clip.get("duration"):
+                p = max(0.0, min(1.0, (t - clip["start"]) / clip["duration"]))
+                f = ken_burns(f, motion, p, self.w, self.h)
+            return f
         data = self._vid.get(clip["id"])
         if data and data["frames"].shape[0]:
             idx = min(max(0, i - data["start_i"]), data["frames"].shape[0] - 1)

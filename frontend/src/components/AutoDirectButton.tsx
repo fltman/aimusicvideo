@@ -6,6 +6,8 @@ import { api } from '../api/client';
 export default function AutoDirectButton() {
   const projectId = useEditor((s) => s.projectId);
   const analysisStatus = useEditor((s) => s.analysisStatus);
+  const addTextClip = useEditor((s) => s.addTextClip);
+  const addEffectClip = useEditor((s) => s.addEffectClip);
 
   const [open, setOpen] = useState(false);
   const [maxShots, setMaxShots] = useState(10);
@@ -21,6 +23,17 @@ export default function AutoDirectButton() {
     setError(null);
     try {
       const res = await api.autoDirect(projectId, maxShots);
+      // apply the title card + beat-synced effects now; shot images auto-place
+      // as the generation queue completes.
+      for (const t of res.texts ?? []) {
+        addTextClip(t.text, t.at, t.duration, t.position);
+      }
+      for (const e of res.effects ?? []) {
+        addEffectClip(e.filter_id, e.name, e.at, e.duration);
+      }
+      // adding clips auto-opens their editors — close them after auto-direct
+      useEditor.getState().closeFilterWorkspace();
+      useEditor.getState().openTextEditor(null);
       setDone(res.shots);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');

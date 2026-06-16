@@ -77,6 +77,7 @@ export interface GenJob {
   error: string | null;
   insert_at: number | null;
   insert_duration: number | null;
+  insert_meta?: Record<string, unknown> | null;
   seq: number;
 }
 
@@ -140,6 +141,7 @@ export interface Clip {
   duration: number;   // length on the timeline (seconds)
   inPoint: number;    // offset into source media (seconds)
   color?: string;
+  motion?: 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down' | 'none';
   filterId?: string;                       // effect clips: the filter plugin
   params?: Record<string, unknown>;        // effect clips: param values
   text?: string;                           // text clips: the overlay text

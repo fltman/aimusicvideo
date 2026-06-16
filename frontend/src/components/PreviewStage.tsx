@@ -38,6 +38,29 @@ export default function PreviewStage({ className = '' }: { className?: string })
   const isVideo = asset?.kind === 'video';
   const isImage = asset?.kind === 'image';
 
+  // Ken Burns motion for the active image clip (matches the export)
+  const kb: React.CSSProperties = {};
+  if (isImage && active) {
+    const p = Math.max(
+      0,
+      Math.min(1, (currentTime - active.clip.start) / (active.clip.duration || 1)),
+    );
+    const m = active.clip.motion ?? 'zoom-in';
+    let scale = 1.16;
+    let tx = 0;
+    let ty = 0;
+    if (m === 'zoom-in') scale = 1 + 0.14 * p;
+    else if (m === 'zoom-out') scale = 1 + 0.14 * (1 - p);
+    else if (m === 'pan-left') tx = (0.5 - p) * 8;
+    else if (m === 'pan-right') tx = (p - 0.5) * 8;
+    else if (m === 'pan-up') ty = (0.5 - p) * 8;
+    else if (m === 'pan-down') ty = (p - 0.5) * 8;
+    if (m !== 'none') {
+      kb.transform = `scale(${scale}) translate(${tx}%, ${ty}%)`;
+      kb.transformOrigin = 'center';
+    }
+  }
+
   // Keep the reused <video> synced to the master audio clock.
   useEffect(() => {
     const v = videoRef.current;
@@ -109,6 +132,7 @@ export default function PreviewStage({ className = '' }: { className?: string })
           <img
             src={filesUrl(asset.path)}
             alt={asset.original_name}
+            style={kb}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : isVideo && asset ? (

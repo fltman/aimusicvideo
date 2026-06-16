@@ -158,7 +158,7 @@ export interface EditorState {
   removeTrack: (trackId: string) => void;
   moveTrack: (trackId: string, dir: -1 | 1) => void;
   toggleTrackHidden: (trackId: string) => void;
-  addClipFromAsset: (asset: MediaAsset, start?: number, trackId?: string, duration?: number) => void;
+  addClipFromAsset: (asset: MediaAsset, start?: number, trackId?: string, duration?: number, extra?: Partial<Clip>) => void;
   moveClip: (clipId: string, newStart: number, newTrackId?: string) => void;
   updateClip: (clipId: string, patch: Partial<Clip>) => void;
   trimClip: (clipId: string, edge: 'start' | 'end', newTimelineTime: number) => void;
@@ -571,7 +571,7 @@ export const useEditor = create<EditorState>((set, get) => {
       });
     },
 
-    addClipFromAsset(asset, start, trackId, duration) {
+    addClipFromAsset(asset, start, trackId, duration, extra) {
       const kind: TrackKind = asset.kind === 'audio' ? 'audio' : asset.kind;
       const track = trackId
         ? get().tracks.find((t) => t.id === trackId)!
@@ -590,6 +590,7 @@ export const useEditor = create<EditorState>((set, get) => {
         start: Math.max(0, at),
         duration: dur,
         inPoint: 0,
+        ...extra,
       };
       mutate({ clips: [...get().clips, clip], selectedClipId: clip.id });
     },
