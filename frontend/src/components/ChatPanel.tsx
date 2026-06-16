@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { useEditor } from '../store/editorStore';
 import { api } from '../api/client';
 import { fmtClock } from '../lib/format';
+import Markdown from './Markdown';
 import type { ChatMessage } from '../types';
 
 interface Msg extends ChatMessage {
@@ -127,7 +128,11 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
                   : 'bg-panel2 text-white/80',
               ].join(' ')}
             >
-              <p className="whitespace-pre-wrap">{m.content}</p>
+              {m.role === 'assistant' ? (
+                <Markdown>{m.content}</Markdown>
+              ) : (
+                <p className="whitespace-pre-wrap">{m.content}</p>
+              )}
               {!!m.queued && (
                 <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-accent">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />

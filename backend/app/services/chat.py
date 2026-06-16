@@ -404,7 +404,11 @@ def _system_prompt(project: dict, cursor: float, catalog: str) -> str:
         "budget. NEVER skip ahead to rendering.\n"
         "Times: accept 'm:ss' or seconds; default 'at' to the current playhead. Keep "
         "replies concise and conversational — you are collaborating, not narrating a "
-        "spec."
+        "spec.\n\n"
+        "FORMAT replies in compact GitHub markdown: **bold** for character/shot "
+        "names, bullet or numbered lists for shots/options, short paragraphs. When "
+        "presenting a shot list, use a numbered list with the time and a short beat "
+        "per item. Don't wrap the whole reply in a code block."
     )
 
 
