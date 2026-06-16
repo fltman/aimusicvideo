@@ -24,6 +24,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import textrender
 from .runner import Compositor, compute_envelope, compute_rms
 
 WINDOW_SEC = 4.0
@@ -226,11 +227,8 @@ def main():
             for c in clips:
                 txt = c.get("text")
                 if txt and c["start"] <= t < c["start"] + c["duration"]:
-                    frame = draw_caption(
-                        frame, txt, w, h, c.get("textPosition", "bottom"),
-                        _hex_to_bgr(c.get("textColor", "#ffffff")),
-                        float(c.get("textSize") or 1.0),
-                    )
+                    prog = (t - c["start"]) / max(1e-3, c["duration"])
+                    frame = textrender.render_text_clip(frame, c, prog, w, h)
             enc.stdin.write(np.ascontiguousarray(frame, dtype=np.uint8).tobytes())
         comp.release()
         win_start += win_dur

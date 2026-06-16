@@ -12,6 +12,7 @@ import AutoDirectButton from '../components/AutoDirectButton';
 import ExportButton from '../components/ExportButton';
 import ResizeHandle from '../components/ResizeHandle';
 import FilterWorkspace from '../components/FilterWorkspace';
+import TextClipEditor from '../components/TextClipEditor';
 import Timeline from '../components/timeline/Timeline';
 
 const clamp = (v: number, min: number, max: number) =>
@@ -324,6 +325,9 @@ export default function EditorView({ projectId }: { projectId: string }) {
 
           {/* Full-screen filter workspace (self-gates on filterWorkspaceClipId) */}
           <FilterWorkspace />
+
+          {/* Styled text-overlay editor (self-gates on textEditorClipId) */}
+          <TextClipEditor />
         </>
       )}
     </div>

@@ -105,6 +105,7 @@ export interface EditorState {
   selectedClipId: string | null;
   selectedClipIds: string[];            // multi-select
   filterWorkspaceClipId: string | null; // effect clip open in the filter workspace
+  textEditorClipId: string | null;      // text clip open in the text editor
   rangeIn: number | null;               // loop/export range in
   rangeOut: number | null;              // loop/export range out
   loop: boolean;
@@ -151,6 +152,7 @@ export interface EditorState {
   removeSelected: () => void;
   addTextClip: (text: string, start?: number, duration?: number, position?: 'top' | 'center' | 'bottom') => void;
   updateClipText: (clipId: string, patch: Partial<Clip>) => void;
+  openTextEditor: (clipId: string | null) => void;
   addTrack: (kind: TrackKind, name?: string) => Track;
   ensureTrack: (kind: TrackKind) => Track;
   removeTrack: (trackId: string) => void;
@@ -268,6 +270,7 @@ export const useEditor = create<EditorState>((set, get) => {
     selectedClipId: null,
     selectedClipIds: [],
     filterWorkspaceClipId: null,
+    textEditorClipId: null,
     rangeIn: null,
     rangeOut: null,
     loop: false,
@@ -295,6 +298,7 @@ export const useEditor = create<EditorState>((set, get) => {
         selectedClipId: null,
         selectedClipIds: [],
         filterWorkspaceClipId: null,
+        textEditorClipId: null,
         rangeIn: null,
         rangeOut: null,
         previewAsset: null,
@@ -478,6 +482,14 @@ export const useEditor = create<EditorState>((set, get) => {
         textPosition: position ?? 'bottom',
         textColor: '#ffffff',
         textSize: 1,
+        textFont: 'sans',
+        textBold: true,
+        textAnim: 'fade',
+        textStroke: 0,
+        textStrokeColor: '#000000',
+        textShadow: true,
+        textBg: false,
+        textBgColor: '#000000',
         start: Math.max(0, start ?? get().currentTime),
         duration: duration ?? 3,
         inPoint: 0,
@@ -485,6 +497,7 @@ export const useEditor = create<EditorState>((set, get) => {
       };
       mutate({ clips: [...get().clips, clip], selectedClipId: clip.id,
                selectedClipIds: [clip.id] });
+      set({ textEditorClipId: clip.id });
     },
 
     updateClipText(clipId, patch) {
@@ -495,6 +508,10 @@ export const useEditor = create<EditorState>((set, get) => {
             : c,
         ),
       });
+    },
+
+    openTextEditor(clipId) {
+      set({ textEditorClipId: clipId, selectedClipId: clipId ?? null });
     },
 
     setRangeIn() {

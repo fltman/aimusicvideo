@@ -5,6 +5,7 @@ import {
   activeLyricIndex,
 } from '../store/editorStore';
 import { filesUrl } from '../api/client';
+import { textTypography, textAnimation } from '../lib/textStyle';
 import type { MediaAsset } from '../types';
 
 /** Live 16:9 compositing stage: active visual clip + karaoke lyric overlay. */
@@ -142,6 +143,9 @@ export default function PreviewStage({ className = '' }: { className?: string })
             if (c.text == null) return null;
             if (!(currentTime >= c.start && currentTime < c.start + c.duration))
               return null;
+            const prog = (currentTime - c.start) / Math.max(0.001, c.duration);
+            const { opacity, translateY, text } = textAnimation(c, prog);
+            if (opacity <= 0.01) return null;
             const pos = c.textPosition ?? 'bottom';
             const posClass =
               pos === 'top'
@@ -153,16 +157,16 @@ export default function PreviewStage({ className = '' }: { className?: string })
               <div
                 key={c.id}
                 className={`pointer-events-none absolute inset-x-0 flex justify-center px-6 ${posClass}`}
+                style={{ opacity, transform: `translateY(${translateY}px)` }}
               >
                 <span
-                  className="text-center font-bold"
+                  className="max-w-[90%] text-center"
                   style={{
-                    color: c.textColor ?? '#ffffff',
-                    fontSize: `${(c.textSize ?? 1) * 1.8}rem`,
-                    textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                    ...textTypography(c),
+                    fontSize: `${(c.textSize ?? 1) * 1.9}rem`,
                   }}
                 >
-                  {c.text}
+                  {text}
                 </span>
               </div>
             );

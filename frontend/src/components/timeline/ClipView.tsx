@@ -41,7 +41,7 @@ export default function ClipView({
   const splitClipAt = useEditor((s) => s.splitClipAt);
   const openFilterWorkspace = useEditor((s) => s.openFilterWorkspace);
   const toggleSelect = useEditor((s) => s.toggleSelect);
-  const updateClipText = useEditor((s) => s.updateClipText);
+  const openTextEditor = useEditor((s) => s.openTextEditor);
   const currentTime = useEditor((s) => s.currentTime);
   const waveform = useEditor((s) => s.analysis?.waveform ?? null);
   const media = useEditor((s) => s.media);
@@ -130,8 +130,7 @@ export default function ClipView({
   const onDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isText) {
-      const t = window.prompt('Overlay text', clip.text ?? '');
-      if (t != null) updateClipText(clip.id, { text: t });
+      openTextEditor(clip.id); // open the styled text editor
       return;
     }
     if (isEffect) {

@@ -144,6 +144,14 @@ export interface Clip {
   textPosition?: 'top' | 'center' | 'bottom';
   textColor?: string;
   textSize?: number;                       // relative font size (1 = default)
+  textFont?: 'sans' | 'serif' | 'mono' | 'display' | 'elegant';
+  textBold?: boolean;
+  textAnim?: 'none' | 'fade' | 'typewriter' | 'slide';
+  textStroke?: number;                     // border/outline width (0 = none)
+  textStrokeColor?: string;
+  textShadow?: boolean;
+  textBg?: boolean;
+  textBgColor?: string;
   [k: string]: unknown;
 }
 
