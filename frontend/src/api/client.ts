@@ -5,6 +5,10 @@ import type {
   AnimateStart,
   ChatMessage,
   ChatResponse,
+  FilterChatMsg,
+  FilterChatResult,
+  FilterDetail,
+  FilterManifest,
   GenJob,
   MediaAsset,
   ProjectFull,
@@ -97,6 +101,43 @@ export const api = {
 
   // ── generation queue ──────────────────────────────────────────────────
   listQueue: (id: string) => req<GenJob[]>(`${API}/projects/${id}/queue`),
+  jobStatus: (jobId: string) => req<GenJob>(`${API}/job/${jobId}`),
+
+  // ── filter plugins ────────────────────────────────────────────────────
+  listFilters: () => req<FilterManifest[]>(`${API}/filters`),
+  createFilter: (name: string) =>
+    req<FilterDetail>(`${API}/filters`, json('POST', { name })),
+  getFilter: (id: string) => req<FilterDetail>(`${API}/filters/${id}`),
+  forkFilter: (id: string, name: string) =>
+    req<FilterDetail>(`${API}/filters/${id}/fork`, json('POST', { name })),
+  saveFilter: (id: string, code: string, message: string) =>
+    req<FilterDetail>(`${API}/filters/${id}/save`, json('POST', { code, message })),
+  rollbackFilter: (id: string, version: number) =>
+    req<FilterDetail>(`${API}/filters/${id}/rollback`, json('POST', { version })),
+  deleteFilter: (id: string) =>
+    req<void>(`${API}/filters/${id}`, { method: 'DELETE' }),
+  getFilterChat: (id: string) => req<FilterChatMsg[]>(`${API}/filters/${id}/chat`),
+  filterChat: (id: string, message: string) =>
+    req<FilterChatResult>(`${API}/filters/${id}/chat`, json('POST', { message })),
+  renderFilterPreview: (
+    pid: string,
+    filterId: string,
+    params: Record<string, unknown>,
+    cursorTime: number,
+  ) =>
+    req<{ job_id: string }>(
+      `${API}/projects/${pid}/filter-preview`,
+      json('POST', { filter_id: filterId, params, cursor_time: cursorTime }),
+    ),
+
+  // ── export ────────────────────────────────────────────────────────────
+  exportVideo: (pid: string, resolution: string) =>
+    req<{ job_id: string; export_id: string }>(
+      `${API}/projects/${pid}/export`,
+      json('POST', { resolution }),
+    ),
+  exportProgress: (pid: string, exportId: string) =>
+    req<{ progress: number }>(`${API}/projects/${pid}/export-progress/${exportId}`),
 
   // ── creative-director chat ────────────────────────────────────────────
   chat: (id: string, messages: ChatMessage[], cursorTime: number) =>

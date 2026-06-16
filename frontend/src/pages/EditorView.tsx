@@ -8,7 +8,9 @@ import PreviewStage from '../components/PreviewStage';
 import RightPanel from '../components/RightPanel';
 import ChatDock from '../components/ChatDock';
 import GenerationQueue from '../components/GenerationQueue';
+import ExportButton from '../components/ExportButton';
 import ResizeHandle from '../components/ResizeHandle';
+import FilterWorkspace from '../components/FilterWorkspace';
 import Timeline from '../components/timeline/Timeline';
 
 const clamp = (v: number, min: number, max: number) =>
@@ -179,6 +181,7 @@ export default function EditorView({ projectId }: { projectId: string }) {
         </h1>
         <div className="ml-auto flex items-center gap-3">
           <GenerationQueue jobs={genJobs} />
+          <ExportButton />
           <Transport />
         </div>
       </header>
@@ -280,6 +283,9 @@ export default function EditorView({ projectId }: { projectId: string }) {
 
           {/* Floating director chat */}
           <ChatDock />
+
+          {/* Full-screen filter workspace (self-gates on filterWorkspaceClipId) */}
+          <FilterWorkspace />
         </>
       )}
     </div>

@@ -126,7 +126,61 @@ export interface Clip {
   duration: number;   // length on the timeline (seconds)
   inPoint: number;    // offset into source media (seconds)
   color?: string;
+  filterId?: string;                       // effect clips: the filter plugin
+  params?: Record<string, unknown>;        // effect clips: param values
   [k: string]: unknown;
+}
+
+// ── filter plugins ──────────────────────────────────────────────────────────
+export type FilterParamType = 'slider' | 'knob' | 'switch' | 'select';
+
+export interface FilterParam {
+  key: string;
+  type: FilterParamType;
+  label: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  default: unknown;
+  options?: string[];
+}
+
+export interface FilterManifest {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  builtin?: boolean;
+  template?: boolean;
+  forkedFrom?: string;
+  tags?: string[];
+  param_count?: number;
+}
+
+export interface FilterVersion {
+  version: number;
+  message: string;
+  ts: string;
+}
+
+export interface FilterDetail {
+  manifest: FilterManifest;
+  code: string;
+  params: FilterParam[];
+  versions: FilterVersion[];
+}
+
+export interface FilterChatMsg {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface FilterChatResult {
+  reply: string;
+  version: number | null;
+  code?: string;
+  params?: FilterParam[];
+  error?: string;
 }
 
 export interface TimelineDoc {

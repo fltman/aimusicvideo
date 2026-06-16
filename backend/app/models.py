@@ -82,6 +82,11 @@ class FilterPreviewRequest(BaseModel):
     cursor_time: float = 0.0
 
 
+class ExportRequest(BaseModel):
+    resolution: str = "720p"
+    fps: int = 30
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str

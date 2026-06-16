@@ -89,6 +89,7 @@ export interface EditorState {
 
   previewAsset: MediaAsset | null; // source-preview: show a library asset directly
   selectedClipId: string | null;
+  filterWorkspaceClipId: string | null; // effect clip open in the filter workspace
   playing: boolean;
   currentTime: number;
   duration: number;
@@ -128,6 +129,13 @@ export interface EditorState {
   splitClipAt: (clipId: string, t: number) => void;
   splitAtPlayhead: () => void;
   removeClip: (clipId: string) => void;
+
+  // effect clips + filter workspace
+  addEffectClip: (filterId: string, name: string) => void;
+  updateClipParams: (clipId: string, params: Record<string, unknown>) => void;
+  setClipFilter: (clipId: string, filterId: string, name: string) => void;
+  openFilterWorkspace: (clipId: string) => void;
+  closeFilterWorkspace: () => void;
 
   // internal
   _ensureSongClip: () => void;
@@ -175,6 +183,7 @@ export const useEditor = create<EditorState>((set, get) => {
     clips: [],
     previewAsset: null,
     selectedClipId: null,
+    filterWorkspaceClipId: null,
     playing: false,
     currentTime: 0,
     duration: 1,
@@ -193,6 +202,7 @@ export const useEditor = create<EditorState>((set, get) => {
         currentTime: 0,
         playing: false,
         selectedClipId: null,
+        filterWorkspaceClipId: null,
         previewAsset: null,
       });
       const project = await api.getProject(id);
@@ -265,6 +275,7 @@ export const useEditor = create<EditorState>((set, get) => {
       set({
         projectId: null, project: null, media: [], analysis: null,
         tracks: [], clips: [], previewAsset: null, selectedClipId: null,
+        filterWorkspaceClipId: null,
         playing: false, currentTime: 0, duration: 1,
         analysisStatus: 'none', analysisStage: null,
       });
@@ -460,6 +471,49 @@ export const useEditor = create<EditorState>((set, get) => {
         clips: get().clips.filter((c) => c.id !== clipId),
         selectedClipId: get().selectedClipId === clipId ? null : get().selectedClipId,
       });
+    },
+
+    // ── effect clips + filter workspace ─────────────────────────────────
+    addEffectClip(filterId, name) {
+      const track = get().ensureTrack('effect');
+      const clip: Clip = {
+        id: uid(),
+        trackId: track.id,
+        assetId: null,
+        filterId,
+        params: {},
+        name,
+        start: Math.max(0, get().currentTime),
+        duration: 4,
+        inPoint: 0,
+        color: '#9b6df0',
+      };
+      mutate({ clips: [...get().clips, clip], selectedClipId: clip.id });
+      set({ filterWorkspaceClipId: clip.id });
+    },
+
+    updateClipParams(clipId, params) {
+      mutate({
+        clips: get().clips.map((c) =>
+          c.id === clipId ? { ...c, params: { ...(c.params ?? {}), ...params } } : c,
+        ),
+      });
+    },
+
+    setClipFilter(clipId, filterId, name) {
+      mutate({
+        clips: get().clips.map((c) =>
+          c.id === clipId ? { ...c, filterId, name, params: {} } : c,
+        ),
+      });
+    },
+
+    openFilterWorkspace(clipId) {
+      set({ filterWorkspaceClipId: clipId, selectedClipId: clipId });
+    },
+
+    closeFilterWorkspace() {
+      set({ filterWorkspaceClipId: null });
     },
 
     // ── internal ───────────────────────────────────────────────────────

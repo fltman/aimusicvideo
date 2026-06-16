@@ -7,13 +7,14 @@
 //   lane-local time = (clientX - laneRect.left + scrollLeft) / pixelsPerSecond
 // where laneRect is the on-screen rect of the scroll viewport (already past the
 // gutter). This keeps every pointer interaction consistent.
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../../store/editorStore';
 import { TRACK_HEADER_W, TRACK_H, RULER_H } from '../../lib/constants';
 import type { Track, TrackKind } from '../../types';
 import Ruler from './Ruler';
 import TrackRow from './TrackRow';
 import Playhead from './Playhead';
+import FilterBrowser from '../FilterBrowser';
 
 const KIND_ICON: Record<TrackKind, string> = {
   audio: '♪',
@@ -36,9 +37,11 @@ export default function Timeline({ className }: { className?: string }) {
   const removeTrack = useEditor((s) => s.removeTrack);
   const moveTrack = useEditor((s) => s.moveTrack);
   const toggleTrackHidden = useEditor((s) => s.toggleTrackHidden);
+  const addEffectClip = useEditor((s) => s.addEffectClip);
   const seek = useEditor((s) => s.seek);
   const select = useEditor((s) => s.select);
 
+  const [browserOpen, setBrowserOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,6 +119,15 @@ export default function Timeline({ className }: { className?: string }) {
             + {KIND_ICON[kind]} {kind}
           </button>
         ))}
+
+        <button
+          type="button"
+          onClick={() => setBrowserOpen(true)}
+          className="rounded border border-accent/50 bg-accent/15 px-2 py-1 text-accent hover:bg-accent/25"
+          title="Add a filter effect"
+        >
+          ✨ Filters
+        </button>
 
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -209,6 +221,12 @@ export default function Timeline({ className }: { className?: string }) {
           </div>
         </div>
       </div>
+
+      <FilterBrowser
+        open={browserOpen}
+        onClose={() => setBrowserOpen(false)}
+        onPick={(f) => addEffectClip(f.id, f.name)}
+      />
     </div>
   );
 }

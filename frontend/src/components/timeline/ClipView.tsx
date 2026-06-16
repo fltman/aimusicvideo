@@ -39,9 +39,12 @@ export default function ClipView({
   const trimClip = useEditor((s) => s.trimClip);
   const select = useEditor((s) => s.select);
   const splitClipAt = useEditor((s) => s.splitClipAt);
+  const openFilterWorkspace = useEditor((s) => s.openFilterWorkspace);
   const currentTime = useEditor((s) => s.currentTime);
   const waveform = useEditor((s) => s.analysis?.waveform ?? null);
   const media = useEditor((s) => s.media);
+
+  const isEffect = !!clip.filterId || track.kind === 'effect';
 
   // image/video clips show their thumbnail as a repeating filmstrip background
   const asset = clip.assetId ? media.find((m) => m.id === clip.assetId) : null;
@@ -119,6 +122,10 @@ export default function ClipView({
 
   const onDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isEffect) {
+      openFilterWorkspace(clip.id); // double-click an effect clip → edit the filter
+      return;
+    }
     if (currentTime > clip.start + MIN_CLIP && currentTime < clip.start + clip.duration - MIN_CLIP) {
       splitClipAt(clip.id, currentTime);
     }
@@ -174,7 +181,7 @@ export default function ClipView({
       )}
 
       <span className="pointer-events-none absolute left-2 top-1 max-w-full truncate pr-2 font-medium text-white/90 drop-shadow">
-        {clip.name}
+        {isEffect ? '✨ ' : ''}{clip.name}
       </span>
 
       {!isSong && (
