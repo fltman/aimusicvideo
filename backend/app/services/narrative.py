@@ -583,6 +583,29 @@ def build_inventory(pid: str) -> list[dict]:
     return inv
 
 
+def find_entity(story: dict, entity_id: str) -> tuple[Optional[dict], str]:
+    """Look up a story entity by id; returns (entity, 'character'|'scene')."""
+    for c in story.get("characters") or []:
+        if c["id"] == entity_id:
+            return c, "character"
+    for s in story.get("settings") or []:
+        if s["id"] == entity_id:
+            return s, "scene"
+    return None, ""
+
+
+def reference_prompt(entity: dict, kind: str, project: dict) -> str:
+    """A clean, canonical reference image prompt for a character or location."""
+    style = _style_suffix(project)
+    anchor = entity.get("visual_anchor") or entity.get("name", "")
+    if kind == "character":
+        return (f"Character reference portrait. {anchor}. Single subject, clear and "
+                f"well lit, three-quarter view from head to waist, neutral backdrop, "
+                f"sharp focus on the face. {style}")
+    return (f"Location establishing plate. {anchor}. Wide, empty establishing shot of "
+            f"the place with no people, clear sense of the space. {style}")
+
+
 def broker(project: dict, story: dict, script: dict, inventory: list[dict],
            bible_links: dict) -> dict:
     chars = {c["id"]: c for c in (story.get("characters") or [])}
@@ -590,14 +613,10 @@ def broker(project: dict, story: dict, script: dict, inventory: list[dict],
     motifs = {m["id"]: m for m in (story.get("motifs") or [])}
     style = _style_suffix(project)
 
-    established = dict(bible_links or {})         # entity_id -> existing asset id
     placed_at: list[tuple[float, float]] = []     # reused asset time spans (avoid dup on screen)
     shots_out = []
 
     for shot in script["shots"]:
-        ents = list(shot.get("char_ids") or [])
-        if shot.get("setting_id"):
-            ents.append(shot["setting_id"])
         primary = (shot.get("char_ids") or [None])[0] or shot.get("setting_id")
 
         anchors = [chars[c]["visual_anchor"] for c in shot.get("char_ids", []) if c in chars]
@@ -629,47 +648,37 @@ def broker(project: dict, story: dict, script: dict, inventory: list[dict],
             if score > best:
                 best, best_a = score, a
 
-        is_unestablished_anchor = bool(primary) and primary not in established
-        overlap = best_a and any(
-            not (shot["start"] + shot["duration"] <= t0 or shot["start"] >= t1)
-            for (t0, t1) in placed_at if False  # spans tracked per-asset below
-        )
-        reuse = (best >= 0.62 and best_a is not None and not is_unestablished_anchor
+        reuse = (best >= 0.62 and best_a is not None
                  and not _asset_overlaps(best_a["id"], shot, placed_at, shots_out))
 
         if reuse:
             placed_at.append((shot["start"], shot["start"] + shot["duration"]))
             shots_out.append({**shot, "decision": "reuse", "prompt": prompt,
-                              "reuse_asset_id": best_a["id"], "anchor_for_entity": None,
-                              "depends_on": [], "wave": 0, "score": round(best, 3)})
+                              "reuse_asset_id": best_a["id"], "depends_on": [],
+                              "score": round(best, 3)})
             continue
 
-        # GENERATE — is this the establishing shot for an entity?
-        anchor_for = None
-        depends = []
-        if primary:
-            if primary not in established:
-                anchor_for = primary           # this shot becomes canon
-                established[primary] = "__pending__"
-            else:
-                depends.append(primary)        # reference the entity's canon
-            if shot.get("setting_id") and shot["setting_id"] != primary:
-                if shot["setting_id"] in established:
-                    depends.append(shot["setting_id"])
-        wave = 1 if any(established.get(e) == "__pending__" for e in depends) else 0
+        # GENERATE — reference every entity in the shot. The actual reference images
+        # (the cast portraits + location plates) are generated FIRST by the render
+        # step; each shot here just declares which canon it needs.
+        depends = list(shot.get("char_ids") or [])
+        if shot.get("setting_id"):
+            depends.append(shot["setting_id"])
         shots_out.append({**shot, "decision": "generate", "prompt": prompt,
-                          "reuse_asset_id": None, "anchor_for_entity": anchor_for,
-                          "depends_on": depends, "wave": wave, "score": round(best, 3)})
+                          "reuse_asset_id": None, "depends_on": depends,
+                          "score": round(best, 3)})
 
-    waves: dict[int, list[int]] = {}
-    for sh in shots_out:
-        if sh["decision"] in ("generate", "reuse"):
-            waves.setdefault(sh["wave"], []).append(sh["idx"])
     gen = sum(1 for s in shots_out if s["decision"] == "generate")
     reuse_n = sum(1 for s in shots_out if s["decision"] == "reuse")
-    return {"shots": shots_out,
-            "generation_waves": [{"wave": w, "shot_idxs": waves[w]} for w in sorted(waves)],
-            "generate_count": gen, "reuse_count": reuse_n}
+    # entities that need a reference image (any referenced by a generate shot)
+    cast_entities: list[str] = []
+    for s in shots_out:
+        if s["decision"] == "generate":
+            for e in s.get("depends_on") or []:
+                if e not in cast_entities:
+                    cast_entities.append(e)
+    return {"shots": shots_out, "generate_count": gen, "reuse_count": reuse_n,
+            "cast_entities": cast_entities}
 
 
 def _asset_overlaps(asset_id: str, shot: dict, placed: list, shots_out: list) -> bool:

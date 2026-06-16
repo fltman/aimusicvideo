@@ -8,14 +8,15 @@ const STATUS: Record<GenStatus, { dot: string; label: string }> = {
   error: { dot: 'bg-bass', label: 'failed' },
 };
 
-/** Top-bar generation-queue indicator with an expandable job list. */
+/** Top-bar generation-queue indicator with an expandable job list. Always
+ *  visible (even when idle) so the queue is a stable, findable control. */
 export default function GenerationQueue({ jobs }: { jobs: GenJob[] }) {
   const [open, setOpen] = useState(false);
-  if (jobs.length === 0) return null;
 
   const active = jobs.filter(
     (j) => j.status === 'pending' || j.status === 'running',
   );
+  const failed = jobs.some((j) => j.status === 'error');
 
   return (
     <div className="relative">
@@ -29,10 +30,15 @@ export default function GenerationQueue({ jobs }: { jobs: GenJob[] }) {
             <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
             {active.length} generating
           </>
+        ) : jobs.length > 0 ? (
+          <>
+            <span className={`h-2 w-2 rounded-full ${failed ? 'bg-bass' : 'bg-high'}`} />
+            queue
+          </>
         ) : (
           <>
-            <span className="h-2 w-2 rounded-full bg-high" />
-            generations
+            <span className="h-2 w-2 rounded-full bg-white/25" />
+            <span className="text-white/50">queue</span>
           </>
         )}
       </button>
@@ -42,6 +48,11 @@ export default function GenerationQueue({ jobs }: { jobs: GenJob[] }) {
           <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-white/35">
             Generations · max 3 parallel
           </div>
+          {jobs.length === 0 && (
+            <div className="px-2 py-3 text-center text-[11px] text-white/30">
+              Nothing generating. Ask the director chat to render shots or an image.
+            </div>
+          )}
           {jobs.slice(0, 12).map((j) => (
             <div
               key={j.id}

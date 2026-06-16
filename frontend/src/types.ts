@@ -81,6 +81,7 @@ export interface DirectResult {
     duration: number;
   }[];
   new_filters?: { fid: string; name: string }[];
+  cast?: { entity: string; name: string; kind: string; job_id: string }[];
   narrative?: {
     logline?: string;
     characters?: { id: string; name: string }[];

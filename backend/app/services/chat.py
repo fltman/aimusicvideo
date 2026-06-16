@@ -674,16 +674,31 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
         elif name == "render_video":
             from . import director
             direct = director.render(project)
+            for c in direct.get("cast", []):
+                queued.append({"id": c["job_id"], "kind": "image",
+                               "label": f"cast · {c['name']}"})
             for s in direct.get("plan", []):
                 queued.append({"id": s["job_id"], "kind": "image",
                                "label": f"shot {s['idx'] + 1}"})
-            bits = [f"rendering {direct['generate_count']} shot(s)"]
+            cast_names = ", ".join(c["name"] for c in direct.get("cast", [])
+                                   if c["kind"] == "character")
+            loc_names = ", ".join(c["name"] for c in direct.get("cast", [])
+                                  if c["kind"] == "scene")
+            bits = []
+            if direct.get("cast"):
+                bits.append(f"casting {len(direct['cast'])} reference image(s) first")
+            bits.append(f"then rendering {direct['generate_count']} shot(s)")
             if direct.get("reuse_count"):
-                bits.append(f"reused {direct['reuse_count']}")
+                bits.append(f"reusing {direct['reuse_count']}")
             if direct.get("new_filters"):
-                bits.append(f"authored {len(direct['new_filters'])} custom filter")
-            result = (f"Rendering the approved board — {', '.join(bits)}. The title and "
-                      "effects are placed now; images land on the timeline as they finish.")
+                bits.append(f"authoring {len(direct['new_filters'])} custom filter")
+            result = (
+                f"Rendering — {', '.join(bits)}. "
+                + (f"**Cast:** {cast_names}. " if cast_names else "")
+                + (f"**Locations:** {loc_names}. " if loc_names else "")
+                + "The reference portraits/plates generate FIRST so every shot can "
+                "reference them and the characters & scenes stay consistent. Title and "
+                "effects are placed now; shots land on the timeline as they finish.")
         else:
             result = "skipped"
         api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),

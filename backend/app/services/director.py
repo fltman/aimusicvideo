@@ -99,23 +99,16 @@ def _make_runner(pid: str, plan_shot: dict, story: dict) -> Callable[[], dict]:
         return lambda: db.get_media(aid)
 
     prompt = plan_shot["prompt"]
-    anchor_for = plan_shot.get("anchor_for_entity")
-    depends = plan_shot.get("depends_on") or []
-    entity = anchor_for or (depends[0] if depends else None)
-    label, tags = _entity_meta(story, entity)
+    depends = plan_shot.get("depends_on") or []     # entities to reference (cast/locations)
+    entity = depends[0] if depends else None
+    _, tags = _entity_meta(story, entity)           # tag the shot with its character/scene
 
     def runner() -> dict:
-        if anchor_for:
-            seed = _seed_ref(pid, anchor_for)        # keep identity across runs
-            refs = [seed] if seed else []
-        else:
-            refs = _wait_for_canon(pid, depends, _ANCHOR_TIMEOUT)
+        # wait for the cast/location reference images, then generate referencing them
+        refs = _wait_for_canon(pid, depends, _ANCHOR_TIMEOUT)
         png = imagegen.generate_image(prompt, refs or None)
-        asset = chat_service._save_image_asset(
-            pid, png, prompt, label=label, tags=tags, bible_entity=entity)
-        if anchor_for:
-            _write_bible(pid, anchor_for, asset["id"])
-        return asset
+        return chat_service._save_image_asset(
+            pid, png, prompt, label=None, tags=tags, bible_entity=entity)
 
     return runner
 
@@ -186,28 +179,46 @@ def render(project: dict) -> dict[str, Any]:
     for nf in fx.get("new_filters", []):
         _enqueue_filter_authoring(pid, nf["fid"], nf["brief"], nf["name"])
 
-    # ── enqueue generation in waves (wave 0 first → establishes canon) ──
-    shots_by_idx = {s["idx"]: s for s in bplan["shots"]}
+    # ── WAVE 0 — CAST: a clean reference image per character + location used by a
+    # shot, generated FIRST so every shot can reference it for consistency. These
+    # land in the media library (tagged), not on the timeline. Skip any already
+    # cast on a previous run (bible_links). ──
+    bible = project.get("bible_links_json") or {}
+    cast: list[dict] = []
+    for ent_id in bplan.get("cast_entities", []):
+        if bible.get(ent_id):
+            continue
+        ent, kind = narrative.find_entity(story, ent_id)
+        if not ent:
+            continue
+        prompt = narrative.reference_prompt(ent, kind, project)
+        job = genqueue.submit(pid, "image", f"cast · {ent.get('name', kind)}",
+                              _cast_runner(pid, ent_id, prompt, story))
+        cast.append({"entity": ent_id, "name": ent.get("name"), "kind": kind,
+                     "job_id": job["id"]})
+
+    # ── WAVE 1 — SHOTS: reuse a library plate or generate referencing the cast.
+    # Generate runners wait for their entities' reference images (see _make_runner). ──
     plan: list[dict] = []
-    for wave in bplan["generation_waves"]:
-        for idx in wave["shot_idxs"]:
-            ps = shots_by_idx[idx]
-            meta = {"motion": ps["motion"], "beat": ps.get("beat"),
-                    "bible_entity": ps.get("anchor_for_entity") or
-                    (ps.get("depends_on") or [None])[0],
-                    "intent": ps.get("intent")}
-            label = f"shot {idx + 1}" + (" (reuse)" if ps["decision"] == "reuse" else "")
-            job = genqueue.submit(
-                pid, "image", label, _make_runner(pid, ps, story),
-                insert_at=ps["start"], insert_duration=ps["duration"], insert_meta=meta)
-            plan.append({
-                "idx": idx, "start": ps["start"], "duration": ps["duration"],
-                "lyric": ps.get("lyric", ""), "prompt": ps["prompt"],
-                "motion": ps["motion"], "job_id": job["id"],
-                "decision": ps["decision"], "reuse_asset_id": ps.get("reuse_asset_id"),
-                "bible_entity": meta["bible_entity"], "beat": ps.get("beat"),
-                "intent": ps.get("intent"), "shot_size": ps.get("shot_size"),
-            })
+    for ps in bplan["shots"]:
+        if ps["decision"] not in ("generate", "reuse"):
+            continue  # interlude_effect → handled as an effect clip, not an image
+        idx = ps["idx"]
+        primary = (ps.get("depends_on") or [None])[0]
+        meta = {"motion": ps["motion"], "beat": ps.get("beat"),
+                "bible_entity": primary, "intent": ps.get("intent")}
+        label = f"shot {idx + 1}" + (" (reuse)" if ps["decision"] == "reuse" else "")
+        job = genqueue.submit(
+            pid, "image", label, _make_runner(pid, ps, story),
+            insert_at=ps["start"], insert_duration=ps["duration"], insert_meta=meta)
+        plan.append({
+            "idx": idx, "start": ps["start"], "duration": ps["duration"],
+            "lyric": ps.get("lyric", ""), "prompt": ps["prompt"],
+            "motion": ps["motion"], "job_id": job["id"],
+            "decision": ps["decision"], "reuse_asset_id": ps.get("reuse_asset_id"),
+            "bible_entity": primary, "beat": ps.get("beat"),
+            "intent": ps.get("intent"), "shot_size": ps.get("shot_size"),
+        })
     plan.sort(key=lambda p: p["start"])
 
     dur = float(project.get("duration_sec") or 4.0)
@@ -218,7 +229,7 @@ def render(project: dict) -> dict[str, Any]:
 
     return {
         "shots": len(plan), "concept": script.get("concept") or story.get("logline", ""),
-        "plan": plan, "texts": texts,
+        "plan": plan, "texts": texts, "cast": cast,
         "effects": fx["effects"], "interlude_clips": fx["interlude_clips"],
         "new_filters": fx["new_filters"],
         "generate_count": bplan["generate_count"], "reuse_count": bplan["reuse_count"],
@@ -227,6 +238,21 @@ def render(project: dict) -> dict[str, Any]:
                       "settings": story.get("settings", []),
                       "sections": rhythm["sections"]},
     }
+
+
+def _cast_runner(pid: str, entity_id: str, prompt: str, story: dict) -> Callable[[], dict]:
+    """Generate an entity's canonical reference image and record it as canon."""
+    label, tags = _entity_meta(story, entity_id)
+
+    def runner() -> dict:
+        seed = _seed_ref(pid, entity_id)         # keep identity across runs if any
+        png = imagegen.generate_image(prompt, [seed] if seed else None)
+        asset = chat_service._save_image_asset(
+            pid, png, prompt, label=label, tags=tags, bible_entity=entity_id)
+        _write_bible(pid, entity_id, asset["id"])
+        return asset
+
+    return runner
 
 
 def _title_from(project: dict, story: dict) -> str:
