@@ -131,6 +131,8 @@ export interface EditorState {
   refreshMedia: () => Promise<void>;
   setPreviewAsset: (asset: MediaAsset | null) => void;
   setAspect: (aspect: string) => void;
+  setPromptMode: (on: boolean) => void;
+  fulfillPlaceholder: (assetId: string, file: File) => Promise<void>;
 
   snapEnabled: boolean;
 
@@ -419,6 +421,24 @@ export const useEditor = create<EditorState>((set, get) => {
       api.setProjectAspect(projectId, aspect).catch(() => {});
     },
 
+    setPromptMode(on) {
+      const { projectId, project } = get();
+      if (!projectId || !project) return;
+      set({ project: { ...project, prompt_mode: on } });
+      api.setPromptMode(projectId, on).catch(() => {});
+    },
+
+    async fulfillPlaceholder(assetId, file) {
+      const { projectId } = get();
+      if (!projectId) return;
+      try {
+        await api.fulfillPlaceholder(projectId, assetId, file);
+        await get().refreshMedia(); // updated asset records (same ids) → clips re-render
+      } catch {
+        /* surfaced by the caller if needed */
+      }
+    },
+
     // ── transport ──────────────────────────────────────────────────────
     play() {
       if (!audioEl) return;
@@ -594,7 +614,9 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     addClipFromAsset(asset, start, trackId, duration, extra) {
-      const kind: TrackKind = asset.kind === 'audio' ? 'audio' : asset.kind;
+      // placeholders are visual stand-ins → live on an image lane until fulfilled
+      const kind: TrackKind =
+        asset.kind === 'audio' ? 'audio' : asset.kind === 'placeholder' ? 'image' : asset.kind;
       const track = trackId
         ? get().tracks.find((t) => t.id === trackId)!
         : get().ensureTrack(kind);

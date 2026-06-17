@@ -103,6 +103,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
     if "aspect" not in pcols:
         conn.execute("ALTER TABLE projects ADD COLUMN aspect TEXT DEFAULT '16:9'")
+    if "prompt_mode" not in pcols:
+        conn.execute("ALTER TABLE projects ADD COLUMN prompt_mode INTEGER DEFAULT 0")
     for col in ("rhythm_json", "story_json", "script_json", "bible_links_json",
                 "chat_json"):
         if col not in pcols:
@@ -283,6 +285,35 @@ def update_media(
                 f"UPDATE media_assets SET {', '.join(sets)} WHERE id = ?", vals
             )
     return get_media(asset_id)
+
+
+def update_media_content(
+    asset_id: str,
+    kind: str,
+    path: str,
+    thumb_path: Optional[str] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    duration_sec: Optional[float] = None,
+) -> Optional[dict[str, Any]]:
+    """Turn a placeholder into a real asset in place (keeps id/label/tags/prompt)."""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE media_assets SET kind = ?, path = ?, thumb_path = ?,
+                 width = ?, height = ?, duration_sec = ? WHERE id = ?""",
+            (kind, path, thumb_path, width, height, duration_sec, asset_id),
+        )
+    return get_media(asset_id)
+
+
+def placeholders_with_prompt(project_id: str, prompt: str) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM media_assets
+               WHERE project_id = ? AND kind = 'placeholder' AND gen_prompt = ?""",
+            (project_id, prompt),
+        ).fetchall()
+    return [_row_to_media(r) for r in rows]
 
 
 def delete_media(asset_id: str) -> Optional[dict[str, Any]]:

@@ -1,7 +1,7 @@
 // Shared types — mirror backend/app/models.py and db.py schema.
 
 export type TrackKind = 'audio' | 'video' | 'image' | 'effect' | 'text';
-export type MediaKind = 'image' | 'video' | 'audio';
+export type MediaKind = 'image' | 'video' | 'audio' | 'placeholder';
 export type AnalysisStatus = 'none' | 'processing' | 'done' | 'error';
 
 export interface ProjectSummary {
@@ -29,6 +29,7 @@ export interface MediaAsset {
   height: number | null;
   label: string | null;   // user-given name, e.g. "Kevin"
   tags: string[];         // e.g. ["character"], ["scene"]
+  gen_prompt?: string | null;  // the prompt (placeholders + generated assets)
   created_at: string;
 }
 
@@ -263,6 +264,7 @@ export type Aspect = '16:9' | '9:16' | '1:1';
 
 export interface ProjectFull extends ProjectSummary {
   aspect?: Aspect;
+  prompt_mode?: boolean | number;
   song_original_name: string | null;
   song_wav_path: string | null;
   analysis_stage: string | null;

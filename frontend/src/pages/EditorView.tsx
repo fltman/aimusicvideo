@@ -38,6 +38,7 @@ export default function EditorView({ projectId }: { projectId: string }) {
   const addClipFromAsset = useEditor((s) => s.addClipFromAsset);
   const togglePlay = useEditor((s) => s.togglePlay);
   const setAspect = useEditor((s) => s.setAspect);
+  const setPromptMode = useEditor((s) => s.setPromptMode);
   const aspect = useEditor((s) => s.project?.aspect ?? '16:9');
 
   const project = useEditor((s) => s.project);
@@ -222,6 +223,20 @@ export default function EditorView({ projectId }: { projectId: string }) {
               </button>
             ))}
           </div>
+        )}
+        {hasSong && (
+          <label
+            className="ml-2 flex cursor-pointer select-none items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white/60 ring-1 ring-edge hover:text-white"
+            title="Prompt mode: insert prompt placeholders instead of generating images/videos (drop a real file onto one to fill it)"
+          >
+            <input
+              type="checkbox"
+              checked={!!project?.prompt_mode}
+              onChange={(e) => setPromptMode(e.target.checked)}
+              className="accent-accent"
+            />
+            Prompt mode
+          </label>
         )}
         <div className="ml-auto flex items-center gap-3">
           <GenerationQueue jobs={genJobs} />

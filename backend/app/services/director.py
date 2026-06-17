@@ -20,7 +20,7 @@ from typing import Any, Callable, Optional
 
 from .. import config, db
 from . import chat as chat_service
-from . import genqueue, imagegen, narrative
+from . import genqueue, imagegen, narrative, placeholders
 
 # The director chooses the shot count from the song; this is only a hard ceiling
 # so an auto-decided count can never run the generation cost away.
@@ -92,7 +92,8 @@ def _entity_meta(story: dict, entity: Optional[str]) -> tuple[Optional[str], Opt
     return None, [entity]
 
 
-def _make_runner(pid: str, plan_shot: dict, story: dict) -> Callable[[], dict]:
+def _make_runner(pid: str, plan_shot: dict, story: dict,
+                 prompt_mode: bool = False) -> Callable[[], dict]:
     """Build the genqueue runner closure for one shot (reuse or generate)."""
     if plan_shot["decision"] == "reuse":
         aid = plan_shot["reuse_asset_id"]
@@ -102,6 +103,10 @@ def _make_runner(pid: str, plan_shot: dict, story: dict) -> Callable[[], dict]:
     depends = plan_shot.get("depends_on") or []     # entities to reference (cast/locations)
     entity = depends[0] if depends else None
     _, tags = _entity_meta(story, entity)           # tag the shot with its character/scene
+
+    if prompt_mode:
+        # draft mode: insert a placeholder carrying the prompt — no generation cost
+        return lambda: placeholders.create(pid, prompt, tags=tags, bible_entity=entity)
 
     def runner() -> dict:
         # wait for the cast/location reference images, then generate referencing them
@@ -179,23 +184,27 @@ def render(project: dict) -> dict[str, Any]:
     for nf in fx.get("new_filters", []):
         _enqueue_filter_authoring(pid, nf["fid"], nf["brief"], nf["name"])
 
+    pm = bool(project.get("prompt_mode"))
+
     # ── WAVE 0 — CAST: a clean reference image per character + location used by a
     # shot, generated FIRST so every shot can reference it for consistency. These
     # land in the media library (tagged), not on the timeline. Skip any already
-    # cast on a previous run (bible_links). ──
+    # cast on a previous run (bible_links). Skipped entirely in prompt mode —
+    # placeholders need no references. ──
     bible = project.get("bible_links_json") or {}
     cast: list[dict] = []
-    for ent_id in bplan.get("cast_entities", []):
-        if bible.get(ent_id):
-            continue
-        ent, kind = narrative.find_entity(story, ent_id)
-        if not ent:
-            continue
-        prompt = narrative.reference_prompt(ent, kind, project)
-        job = genqueue.submit(pid, "image", f"cast · {ent.get('name', kind)}",
-                              _cast_runner(pid, ent_id, prompt, story))
-        cast.append({"entity": ent_id, "name": ent.get("name"), "kind": kind,
-                     "job_id": job["id"]})
+    if not pm:
+        for ent_id in bplan.get("cast_entities", []):
+            if bible.get(ent_id):
+                continue
+            ent, kind = narrative.find_entity(story, ent_id)
+            if not ent:
+                continue
+            prompt = narrative.reference_prompt(ent, kind, project)
+            job = genqueue.submit(pid, "image", f"cast · {ent.get('name', kind)}",
+                                  _cast_runner(pid, ent_id, prompt, story))
+            cast.append({"entity": ent_id, "name": ent.get("name"), "kind": kind,
+                         "job_id": job["id"]})
 
     # ── WAVE 1 — SHOTS: reuse a library plate or generate referencing the cast.
     # Build the shot jobs but DON'T enqueue them yet — the cast reference images
@@ -211,7 +220,7 @@ def render(project: dict) -> dict[str, Any]:
         meta = {"motion": ps["motion"], "beat": ps.get("beat"),
                 "bible_entity": primary, "intent": ps.get("intent")}
         label = f"shot {idx + 1}" + (" (reuse)" if ps["decision"] == "reuse" else "")
-        specs.append({"label": label, "runner": _make_runner(pid, ps, story),
+        specs.append({"label": label, "runner": _make_runner(pid, ps, story, pm),
                       "insert_at": ps["start"], "insert_duration": ps["duration"],
                       "insert_meta": meta})
         plan.append({
@@ -241,6 +250,7 @@ def render(project: dict) -> dict[str, Any]:
     return {
         "shots": len(plan), "concept": script.get("concept") or story.get("logline", ""),
         "plan": plan, "texts": texts, "cast": cast, "shots_pending": bool(cast_ids),
+        "prompt_mode": pm,
         "effects": fx["effects"], "interlude_clips": fx["interlude_clips"],
         "new_filters": fx["new_filters"],
         "generate_count": bplan["generate_count"], "reuse_count": bplan["reuse_count"],

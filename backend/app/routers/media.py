@@ -9,7 +9,9 @@ from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 
 from .. import config, db
 from ..models import AnimateRequest, MediaUpdate
-from ..services import audio, chat as chat_service, genqueue, imagegen, videogen
+from ..services import (
+    audio, chat as chat_service, genqueue, imagegen, placeholders, videogen,
+)
 
 router = APIRouter(prefix="/api/projects/{pid}/media", tags=["media"])
 
@@ -62,6 +64,21 @@ async def upload_media(
         created.append(asset)
 
     return created
+
+
+@router.post("/{asset_id}/fulfill")
+async def fulfill_placeholder(
+    pid: str, asset_id: str, file: UploadFile = File(...)
+) -> dict:
+    """Drop a real image/video onto a placeholder. Every placeholder that shares
+    the same prompt is turned into that asset in place."""
+    if db.get_project(pid) is None:
+        raise HTTPException(404, "Project not found")
+    data = await file.read()
+    updated = placeholders.fulfill(pid, asset_id, data, file.filename or "drop")
+    if not updated:
+        raise HTTPException(400, "Not a placeholder, or unsupported file")
+    return {"updated": updated}
 
 
 @router.post("/{asset_id}/animate")

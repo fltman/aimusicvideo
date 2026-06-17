@@ -38,6 +38,8 @@ def update_project(pid: str, body: ProjectUpdate) -> dict:
         fields["name"] = body.name
     if body.aspect in ("16:9", "9:16", "1:1"):
         fields["aspect"] = body.aspect
+    if body.prompt_mode is not None:
+        fields["prompt_mode"] = 1 if body.prompt_mode else 0
     if fields:
         db.update_project_fields(pid, **fields)
     project = db.get_project(pid)

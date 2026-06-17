@@ -52,6 +52,8 @@ export const api = {
     req<ProjectFull>(`${API}/projects/${id}`, json('PATCH', { name })),
   setProjectAspect: (id: string, aspect: string) =>
     req<ProjectFull>(`${API}/projects/${id}`, json('PATCH', { aspect })),
+  setPromptMode: (id: string, on: boolean) =>
+    req<ProjectFull>(`${API}/projects/${id}`, json('PATCH', { prompt_mode: on })),
   deleteProject: (id: string) =>
     req<void>(`${API}/projects/${id}`, { method: 'DELETE' }),
 
@@ -89,6 +91,15 @@ export const api = {
     ),
   deleteMedia: (id: string, assetId: string) =>
     req<void>(`${API}/projects/${id}/media/${assetId}`, { method: 'DELETE' }),
+  // fill a placeholder from a real image/video file (updates all same-prompt ones)
+  fulfillPlaceholder: (id: string, assetId: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return req<{ updated: MediaAsset[] }>(
+      `${API}/projects/${id}/media/${assetId}/fulfill`,
+      { method: 'POST', body: fd },
+    );
+  },
 
   // ── image → video (seedance) ──────────────────────────────────────────
   animateImage: (

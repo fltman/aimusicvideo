@@ -37,6 +37,7 @@ export default function PreviewStage({ className = '' }: { className?: string })
 
   const isVideo = asset?.kind === 'video';
   const isImage = asset?.kind === 'image';
+  const isPlaceholder = asset?.kind === 'placeholder';
 
   // Ken Burns motion for the active image clip (matches the export)
   const kb: React.CSSProperties = {};
@@ -144,6 +145,18 @@ export default function PreviewStage({ className = '' }: { className?: string })
             preload="auto"
             className="absolute inset-0 h-full w-full object-cover"
           />
+        ) : isPlaceholder && asset ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 border border-dashed border-white/15 bg-[#16131f] p-6 text-center">
+            <span className="text-[10px] uppercase tracking-widest text-white/30">
+              ◳ prompt placeholder
+            </span>
+            <p className="max-w-[80%] text-sm leading-relaxed text-white/55">
+              {asset.gen_prompt || asset.original_name}
+            </p>
+            <span className="text-[11px] text-white/25">
+              Drop a real image or video onto this clip to fill it
+            </span>
+          </div>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             {palette && palette.length > 0 ? (

@@ -594,15 +594,23 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
             ref_images = _resolve_references(pid, ref_names) if ref_names else None
             label = " ".join(prompt.split()[:6]).strip()[:48] or "image"
 
-            def runner(p=prompt, refs=ref_images):
-                png = imagegen.generate_image(p, refs)
-                return _save_image_asset(pid, png, p)
+            if project.get("prompt_mode"):
+                # draft mode: drop a prompt placeholder instead of generating
+                from . import placeholders
+                def runner(p=prompt):
+                    return placeholders.create(pid, p)
+                result = (f"Prompt placeholder added at {_fmt_clock(cursor_time)} "
+                          "(prompt mode — no image generated).")
+            else:
+                def runner(p=prompt, refs=ref_images):
+                    png = imagegen.generate_image(p, refs)
+                    return _save_image_asset(pid, png, p)
+                used = f" using {', '.join(ref_names)}" if ref_names else ""
+                result = (f"Image queued{used}; it will drop onto the timeline at "
+                          f"{_fmt_clock(cursor_time)} when ready.")
 
             job = genqueue.submit(pid, "image", label, runner, insert_at=cursor_time)
             queued.append({"id": job["id"], "kind": "image", "label": label})
-            used = f" using {', '.join(ref_names)}" if ref_names else ""
-            result = (f"Image queued{used}; it will drop onto the timeline at "
-                      f"{_fmt_clock(cursor_time)} when ready.")
         elif name == "add_text":
             text = str(args.get("text", "")).strip()
             at = float(args.get("at", cursor_time) or cursor_time)
@@ -713,6 +721,17 @@ def chat(project: dict, messages: list[dict], cursor_time: float) -> dict:
             for c in direct.get("cast", []):
                 queued.append({"id": c["job_id"], "kind": "image",
                                "label": f"cast · {c['name']}"})
+            if direct.get("prompt_mode"):
+                result = (
+                    f"Prompt mode — boarded **{direct['generate_count']} prompt "
+                    f"placeholders** onto the timeline (no images generated). Each "
+                    "carries its shot prompt with a copy button; drop a real image or "
+                    "video onto one to fill it (and every shot with that exact prompt "
+                    "fills too). Title and effects are placed too.")
+                summaries.append(result)
+                api_messages.append({"role": "tool", "tool_call_id": tc.get("id"),
+                                     "content": result})
+                continue
             # when a cast is generated, the shots are enqueued only AFTER it finishes,
             # so their jobs don't exist yet — the queue poller picks them up then.
             if not direct.get("shots_pending"):

@@ -2,7 +2,7 @@
 // Move (drag body → moveClip, hop tracks of same kind via pointer Y),
 // trim (left/right 8px handles → trimClip), select on click, split on
 // double-click, and draw a mini waveform for song / audio clips.
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useEditor } from '../../store/editorStore';
 import { filesUrl } from '../../api/client';
 import { TRACK_H, MIN_CLIP } from '../../lib/constants';
@@ -52,12 +52,14 @@ export default function ClipView({
   const media = useEditor((s) => s.media);
   const openConvertPrompt = useEditor((s) => s.openConvertPrompt);
   const convertingAssets = useEditor((s) => s.convertingAssets);
+  const fulfillPlaceholder = useEditor((s) => s.fulfillPlaceholder);
 
   const isEffect = !!clip.filterId || track.kind === 'effect';
   const isText = track.kind === 'text' || clip.text != null;
 
   // image/video clips show their thumbnail as a repeating filmstrip background
   const asset = clip.assetId ? media.find((m) => m.id === clip.assetId) : null;
+  const isPlaceholder = asset?.kind === 'placeholder';
   const isImageClip = asset?.kind === 'image' && !isEffect && !isText;
   const converting = asset ? convertingAssets.includes(asset.id) : false;
   const thumbUrl = asset
@@ -141,6 +143,22 @@ export default function ClipView({
     drag.current = null;
   };
 
+  const [dropping, setDropping] = useState(false);
+  const onDropFile = (e: React.DragEvent) => {
+    if (!isPlaceholder || !asset) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDropping(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f && (f.type.startsWith('image/') || f.type.startsWith('video/'))) {
+      fulfillPlaceholder(asset.id, f);
+    }
+  };
+  const copyPrompt = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(asset?.gen_prompt ?? clip.name ?? '').catch(() => {});
+  };
+
   const onDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isText) {
@@ -156,7 +174,9 @@ export default function ClipView({
     }
   };
 
-  const bg = clip.color ?? (isAudio ? '#3a3d66' : '#2f5d4a');
+  const bg = isPlaceholder
+    ? '#2a2440'
+    : clip.color ?? (isAudio ? '#3a3d66' : '#2f5d4a');
 
   return (
     <div
@@ -168,8 +188,19 @@ export default function ClipView({
       onPointerCancel={onUp}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={onDoubleClick}
-      className={`absolute overflow-hidden rounded-md border text-[11px] select-none ${
-        selected ? 'border-accent shadow-[0_0_0_1px_rgba(109,109,240,0.6)]' : 'border-edge'
+      onDragOver={isPlaceholder ? (e) => { e.preventDefault(); setDropping(true); } : undefined}
+      onDragLeave={isPlaceholder ? () => setDropping(false) : undefined}
+      onDrop={isPlaceholder ? onDropFile : undefined}
+      className={`absolute overflow-hidden rounded-md text-[11px] select-none ${
+        isPlaceholder ? 'border border-dashed' : 'border'
+      } ${
+        dropping
+          ? 'border-high ring-2 ring-high'
+          : selected
+            ? 'border-accent shadow-[0_0_0_1px_rgba(109,109,240,0.6)]'
+            : isPlaceholder
+              ? 'border-white/30'
+              : 'border-edge'
       } ${depth > 0 ? 'ring-1 ring-black/40' : ''} ${
         isSong ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
       }`}
@@ -209,8 +240,24 @@ export default function ClipView({
       )}
 
       <span className="pointer-events-none absolute left-2 top-1 max-w-full truncate pr-2 font-medium text-white/90 drop-shadow">
-        {isEffect ? '✨ ' : isText ? 'T ' : ''}{clip.name}
+        {isEffect ? '✨ ' : isText ? 'T ' : ''}{isPlaceholder ? '◳ ' : ''}{clip.name}
       </span>
+
+      {isPlaceholder && (
+        <>
+          <span className="pointer-events-none absolute inset-x-2 bottom-1 truncate text-[10px] text-white/45">
+            {dropping ? 'drop image / video to fill' : 'prompt placeholder · drop a file'}
+          </span>
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={copyPrompt}
+            title="Copy prompt"
+            className="absolute right-1 top-1 z-20 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white/90 hover:bg-black/80"
+          >
+            ⧉ copy
+          </button>
+        </>
+      )}
 
       {/* image → video: animate this still in place (and everywhere it's used) */}
       {isImageClip && (selected || converting) && (

@@ -7,6 +7,7 @@ const KIND_ICON: Record<MediaKind, string> = {
   image: '🖼',
   video: '🎬',
   audio: '🎵',
+  placeholder: '◳',
 };
 
 const QUICK_TAGS = ['character', 'scene', 'prop', 'style'];
@@ -20,7 +21,9 @@ export default function MediaLibrary({ className = '' }: { className?: string })
   const refreshMedia = useEditor((s) => s.refreshMedia);
   const addClipFromAsset = useEditor((s) => s.addClipFromAsset);
   const setPreviewAsset = useEditor((s) => s.setPreviewAsset);
+  const fulfillPlaceholder = useEditor((s) => s.fulfillPlaceholder);
   const previewId = useEditor((s) => s.previewAsset?.id ?? null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -194,19 +197,58 @@ export default function MediaLibrary({ className = '' }: { className?: string })
             {filtered.map((asset) => (
               <div
                 key={asset.id}
-                draggable
+                draggable={asset.kind !== 'placeholder'}
                 onClick={() => setPreviewAsset(asset)}
                 onDragStart={(e) => onDragStart(e, asset)}
                 onDoubleClick={() => addClipFromAsset(asset)}
-                title={`${asset.label || asset.original_name} — click to preview, double-click to add at playhead`}
-                className={`group relative cursor-grab overflow-hidden rounded-md border bg-panel2 active:cursor-grabbing ${
-                  previewId === asset.id
-                    ? 'border-accent ring-1 ring-accent'
-                    : 'border-edge hover:border-accent/60'
+                onDragOver={
+                  asset.kind === 'placeholder'
+                    ? (e) => {
+                        e.preventDefault();
+                        setDropTarget(asset.id);
+                      }
+                    : undefined
+                }
+                onDragLeave={
+                  asset.kind === 'placeholder' ? () => setDropTarget(null) : undefined
+                }
+                onDrop={
+                  asset.kind === 'placeholder'
+                    ? (e) => {
+                        e.preventDefault();
+                        setDropTarget(null);
+                        const f = e.dataTransfer.files?.[0];
+                        if (f && (f.type.startsWith('image/') || f.type.startsWith('video/'))) {
+                          fulfillPlaceholder(asset.id, f);
+                        }
+                      }
+                    : undefined
+                }
+                title={
+                  asset.kind === 'placeholder'
+                    ? asset.gen_prompt ?? 'prompt placeholder — drop an image/video to fill'
+                    : `${asset.label || asset.original_name} — click to preview, double-click to add at playhead`
+                }
+                className={`group relative overflow-hidden rounded-md border bg-panel2 ${
+                  asset.kind === 'placeholder'
+                    ? 'cursor-default border-dashed'
+                    : 'cursor-grab active:cursor-grabbing'
+                } ${
+                  dropTarget === asset.id
+                    ? 'border-high ring-2 ring-high'
+                    : previewId === asset.id
+                      ? 'border-accent ring-1 ring-accent'
+                      : asset.kind === 'placeholder'
+                        ? 'border-white/30'
+                        : 'border-edge hover:border-accent/60'
                 }`}
               >
                 <div className="flex aspect-video items-center justify-center bg-panel3">
-                  {asset.thumb_path ? (
+                  {asset.kind === 'placeholder' ? (
+                    <p className="line-clamp-3 px-2 py-1 text-center text-[9px] leading-tight text-white/45">
+                      {asset.gen_prompt || 'prompt'}
+                    </p>
+                  ) : asset.thumb_path ? (
                     <img
                       src={filesUrl(asset.thumb_path)}
                       alt={asset.label || asset.original_name}
@@ -258,6 +300,20 @@ export default function MediaLibrary({ className = '' }: { className?: string })
                         🎬
                       </button>
                     </>
+                  )}
+                  {asset.kind === 'placeholder' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard
+                          ?.writeText(asset.gen_prompt ?? '')
+                          .catch(() => {});
+                      }}
+                      className="flex h-5 w-5 items-center justify-center rounded bg-black/60 text-[10px] text-white/70 hover:text-high"
+                      title="Copy prompt"
+                    >
+                      ⧉
+                    </button>
                   )}
                   <button
                     onClick={(e) => startEdit(e, asset)}
