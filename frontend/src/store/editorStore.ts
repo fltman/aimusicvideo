@@ -38,6 +38,49 @@ const snapshot = (tracks: Track[], clips: Clip[]): TimelineDoc => ({
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
+/** Build the timeline patch to mount `videoAsset` on a top video track at every
+ *  place `sourceAssetId` is used (trimmed to each slot). Used by both real
+ *  conversions and prompt-mode video placeholders. */
+function buildVideoPlacements(
+  tracks: Track[],
+  clips: Clip[],
+  sourceAssetId: string,
+  videoAsset: MediaAsset,
+): { tracks: Track[]; clips: Clip[]; added: Clip[] } | null {
+  const occ = clips.filter((c) => c.assetId === sourceAssetId);
+  if (!occ.length) return null;
+  let nextTracks = tracks;
+  let vt = tracks.find((t) => t.kind === 'video');
+  const firstImage = tracks.findIndex((t) => t.kind === 'image');
+  if (!vt) {
+    vt = { id: uid(), kind: 'video', name: 'Video' };
+    nextTracks = [vt, ...tracks];
+  } else if (firstImage !== -1 && tracks.indexOf(vt) > firstImage) {
+    nextTracks = [vt, ...tracks.filter((t) => t.id !== vt!.id)];
+  }
+  const taken = new Set(
+    clips.filter((c) => c.assetId === videoAsset.id).map((c) => c.start.toFixed(3)),
+  );
+  const added: Clip[] = occ
+    .filter((c) => !taken.has(c.start.toFixed(3)))
+    .map((c) => ({
+      id: uid(),
+      trackId: vt!.id,
+      assetId: videoAsset.id,
+      name: videoAsset.original_name,
+      start: c.start,
+      duration: c.duration, // softcrop: trim the (longer) video to the slot
+      inPoint: 0,
+      motion: 'none',
+      color: '#2b5c8a',
+    }));
+  return {
+    tracks: nextTracks,
+    clips: added.length ? [...clips, ...added] : clips,
+    added,
+  };
+}
+
 // ── pure selectors (used by preview / lyrics / ruler) ───────────────────────
 
 /** Topmost video/image clip active at time t (later track in order wins). */
@@ -751,12 +794,36 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     async convertClipToVideo(clipId, prompt) {
-      const { projectId, clips, media } = get();
+      const { projectId, project, clips, media } = get();
       const clip = clips.find((c) => c.id === clipId);
       if (!projectId || !clip || !clip.assetId) return;
       const asset = media.find((m) => m.id === clip.assetId);
-      if (!asset || asset.kind !== 'image') return;
+      if (!asset || (asset.kind !== 'image' && asset.kind !== 'placeholder')) return;
       set({ convertPromptClipId: null });
+
+      if (project?.prompt_mode || asset.kind === 'placeholder') {
+        // prompt mode (or a placeholder with no real image to animate): create a
+        // VIDEO placeholder (distinct prompt so it fills separately) and mount it
+        const src = asset.gen_prompt || asset.label || asset.original_name || 'shot';
+        const motion = (prompt ?? '').trim();
+        const videoPrompt = `${src} · video${motion ? ': ' + motion : ''}`;
+        try {
+          const ph = await api.createPlaceholder(projectId, videoPrompt);
+          const res = buildVideoPlacements(get().tracks, get().clips, asset.id, ph);
+          if (res) {
+            mutate({
+              tracks: res.tracks,
+              clips: res.clips,
+              selectedClipId: res.added[0]?.id ?? get().selectedClipId,
+            });
+          }
+          await get().refreshMedia(); // show the new placeholder in the library too
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
       if (get().convertingAssets.includes(asset.id)) return; // already in flight
       set({ convertingAssets: [...get().convertingAssets, asset.id] });
       try {
@@ -782,54 +849,12 @@ export const useEditor = create<EditorState>((set, get) => {
       set({
         convertingAssets: get().convertingAssets.filter((a) => a !== sourceAssetId),
       });
-      const { clips, media } = get();
-      // every place the source image appears as an image clip
-      const occ = clips.filter(
-        (c) =>
-          c.assetId === sourceAssetId &&
-          media.find((m) => m.id === c.assetId)?.kind === 'image',
-      );
-      if (!occ.length) return;
-
-      // ensure a video track that sits ABOVE the image tracks (topmost wins), so
-      // the generated video shows in place of the source still
-      let tracks = get().tracks;
-      let vt = tracks.find((t) => t.kind === 'video');
-      const firstImage = tracks.findIndex((t) => t.kind === 'image');
-      if (!vt) {
-        vt = { id: uid(), kind: 'video', name: 'Video' };
-        tracks = [vt, ...tracks];
-      } else if (firstImage !== -1 && tracks.indexOf(vt) > firstImage) {
-        tracks = [vt, ...tracks.filter((t) => t.id !== vt!.id)];
-      }
-
-      // don't double-place if a video clip for this asset already sits there
-      const taken = new Set(
-        get()
-          .clips.filter((c) => c.assetId === videoAsset.id)
-          .map((c) => c.start.toFixed(3)),
-      );
-      const added: Clip[] = occ
-        .filter((c) => !taken.has(c.start.toFixed(3)))
-        .map((c) => ({
-          id: uid(),
-          trackId: vt!.id,
-          assetId: videoAsset.id,
-          name: videoAsset.original_name,
-          start: c.start,
-          duration: c.duration, // softcrop: trim the (longer) video to the slot
-          inPoint: 0,
-          motion: 'none', // it's real motion now — no Ken Burns
-          color: '#2b5c8a',
-        }));
-      if (!added.length) {
-        mutate({ tracks });
-        return;
-      }
+      const res = buildVideoPlacements(get().tracks, get().clips, sourceAssetId, videoAsset);
+      if (!res) return;
       mutate({
-        tracks,
-        clips: [...get().clips, ...added],
-        selectedClipId: added[0].id,
+        tracks: res.tracks,
+        clips: res.clips,
+        selectedClipId: res.added[0]?.id ?? get().selectedClipId,
       });
     },
 

@@ -91,6 +91,8 @@ export const api = {
     ),
   deleteMedia: (id: string, assetId: string) =>
     req<void>(`${API}/projects/${id}/media/${assetId}`, { method: 'DELETE' }),
+  createPlaceholder: (id: string, prompt: string) =>
+    req<MediaAsset>(`${API}/projects/${id}/media/placeholder`, json('POST', { prompt })),
   // fill a placeholder from a real image/video file (updates all same-prompt ones)
   fulfillPlaceholder: (id: string, assetId: string, file: File) => {
     const fd = new FormData();

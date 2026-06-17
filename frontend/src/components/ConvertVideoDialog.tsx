@@ -10,6 +10,7 @@ export default function ConvertVideoDialog() {
   const media = useEditor((s) => s.media);
   const openConvertPrompt = useEditor((s) => s.openConvertPrompt);
   const convertClipToVideo = useEditor((s) => s.convertClipToVideo);
+  const promptMode = useEditor((s) => !!s.project?.prompt_mode);
 
   const [prompt, setPrompt] = useState('');
 
@@ -70,9 +71,19 @@ export default function ConvertVideoDialog() {
         />
 
         <p className="mb-3 text-[11px] leading-relaxed text-white/40">
-          Generates a {secs}s clip
-          {occurrences > 1 ? ` and places it at all ${occurrences} uses of this image` : ''}
-          , trimmed to fit. Kling · ~1–2 min · runs in the background.
+          {promptMode ? (
+            <>
+              Prompt mode — adds a <span className="text-white/60">video placeholder</span>
+              {occurrences > 1 ? ` at all ${occurrences} uses` : ''} on a video track.
+              Drop a real video onto it later to fill it. No generation.
+            </>
+          ) : (
+            <>
+              Generates a {secs}s clip
+              {occurrences > 1 ? ` and places it at all ${occurrences} uses of this image` : ''}
+              , trimmed to fit. Kling · ~1–2 min · runs in the background.
+            </>
+          )}
         </p>
 
         <div className="flex gap-2">
@@ -86,7 +97,7 @@ export default function ConvertVideoDialog() {
             onClick={go}
             className="flex-1 rounded bg-accent py-2 text-sm font-medium text-white hover:bg-accent/80"
           >
-            Generate video
+            {promptMode ? 'Add video placeholder' : 'Generate video'}
           </button>
         </div>
       </div>

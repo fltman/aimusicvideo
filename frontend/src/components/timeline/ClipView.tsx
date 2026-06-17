@@ -244,42 +244,46 @@ export default function ClipView({
       </span>
 
       {isPlaceholder && (
-        <>
-          <span className="pointer-events-none absolute inset-x-2 bottom-1 truncate text-[10px] text-white/45">
-            {dropping ? 'drop image / video to fill' : 'prompt placeholder · drop a file'}
-          </span>
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={copyPrompt}
-            title="Copy prompt"
-            className="absolute right-1 top-1 z-20 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white/90 hover:bg-black/80"
-          >
-            ⧉ copy
-          </button>
-        </>
+        <span className="pointer-events-none absolute inset-x-2 bottom-1 truncate text-[10px] text-white/45">
+          {dropping ? 'drop image / video to fill' : 'prompt placeholder · drop a file'}
+        </span>
       )}
 
-      {/* image → video: animate this still in place (and everywhere it's used) */}
-      {isImageClip && (selected || converting) && (
-        <button
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!converting) openConvertPrompt(clip.id);
-          }}
-          disabled={converting}
-          title={converting ? 'Generating video…' : 'Turn this image into video'}
-          className={`absolute right-1 top-1 z-20 flex h-5 items-center gap-1 rounded bg-black/55 px-1.5 text-[10px] text-white/90 hover:bg-black/80 ${
-            converting ? 'cursor-default' : ''
-          }`}
-        >
-          {converting ? (
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-          ) : (
-            '🎬'
+      {/* top-right actions: turn an image/placeholder into video; copy a prompt */}
+      {(isImageClip || isPlaceholder) && (
+        <div className="absolute right-1 top-1 z-20 flex gap-1">
+          {(selected || converting) && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!converting) openConvertPrompt(clip.id);
+              }}
+              disabled={converting}
+              title={converting ? 'Generating video…' : 'Turn into video'}
+              className={`flex h-5 items-center gap-1 rounded bg-black/55 px-1.5 text-[10px] text-white/90 hover:bg-black/80 ${
+                converting ? 'cursor-default' : ''
+              }`}
+            >
+              {converting ? (
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              ) : (
+                '🎬'
+              )}
+              <span className="hidden sm:inline">{converting ? 'rendering' : 'to video'}</span>
+            </button>
           )}
-          <span className="hidden sm:inline">{converting ? 'rendering' : 'to video'}</span>
-        </button>
+          {isPlaceholder && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={copyPrompt}
+              title="Copy prompt"
+              className="rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white/90 hover:bg-black/80"
+            >
+              ⧉
+            </button>
+          )}
+        </div>
       )}
 
       {!isSong && (

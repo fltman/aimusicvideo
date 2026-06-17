@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 
 from .. import config, db
-from ..models import AnimateRequest, MediaUpdate
+from ..models import AnimateRequest, MediaUpdate, PlaceholderCreate
 from ..services import (
     audio, chat as chat_service, genqueue, imagegen, placeholders, videogen,
 )
@@ -64,6 +64,14 @@ async def upload_media(
         created.append(asset)
 
     return created
+
+
+@router.post("/placeholder")
+def create_placeholder(pid: str, body: PlaceholderCreate) -> dict:
+    """Create a single prompt placeholder (e.g. a video placeholder from the UI)."""
+    if db.get_project(pid) is None:
+        raise HTTPException(404, "Project not found")
+    return placeholders.create(pid, body.prompt)
 
 
 @router.post("/{asset_id}/fulfill")

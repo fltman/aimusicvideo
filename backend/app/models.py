@@ -52,6 +52,10 @@ class MediaUpdate(BaseModel):
     tags: Optional[list[str]] = None
 
 
+class PlaceholderCreate(BaseModel):
+    prompt: str = ""
+
+
 class AnimateRequest(BaseModel):
     prompt: Optional[str] = None
     duration: int = 5
